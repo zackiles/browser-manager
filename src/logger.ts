@@ -1,4 +1,4 @@
-import 'jsr:@std/dotenv'
+import '@std/dotenv'
 
 const isTestEnv =
   Deno.env.get('DENO_ENV') === 'test' || Deno.env.get('NODE_ENV') === 'test'

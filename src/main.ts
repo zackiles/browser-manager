@@ -7,12 +7,13 @@
   const executable = browser.getExecutable('mac', installPath)
   console.log({ downloadUrl, installPath, executable })
  */
-import { BROWSERS } from './browser-config.ts'
+import { BROWSERS } from './browser-provider.ts'
+import { testBrowsers, testInstallBaseDirectory } from '../test/test-browsers.ts'
 
-const browser = BROWSERS.chromium
-const downloadUrl = await browser.getDownloadUrl({
-  platform: 'Mac',
-  version: '120.0.6099.109',
-  arch: 'arm64',
-})
-console.log(downloadUrl)
+// Loop through test browsers and get download URLs
+for (const [browserName, browserConfig] of Object.entries(testBrowsers)) {
+  const browser = BROWSERS[browserName as keyof typeof BROWSERS]
+  console.log(browserConfig)  
+  const downloadUrl = await browser.getDownloadUrl(browserConfig)
+  console.log(`${browserName}: ${downloadUrl}`)
+}
