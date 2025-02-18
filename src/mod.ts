@@ -1,4 +1,5 @@
-// Export browser configurations
+import '@std/dotenv'
+
 export {
   chrome,
   chromium,
@@ -7,7 +8,6 @@ export {
   arc,
 } from './browser-config.ts'
 
-// Export types
 export type {
   BrowserConfig,
   BrowserParams,
