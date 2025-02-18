@@ -2,11 +2,12 @@
 # CAUTION: this assumes there truly isn't anything in
 /bin
 /dist
+.cache
 
 # Prefer to manually provide documentation and settings to Cursor to avoid context pollution
 # CAUTION: you might actually need these, but can specify them manually using the @ symbol in chats if needed.
 *.md
-docs/
+/docs
 *.json
 *.jsonc
 *.log

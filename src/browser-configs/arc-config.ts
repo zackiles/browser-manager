@@ -1,3 +1,10 @@
+/**
+ * Arc Browser configuration module.
+ * Provides installation and configuration settings for Arc Browser.
+ * Currently supports macOS and Windows platforms.
+ * 
+ * @module browser-configs/arc-config
+ */
 import { BaseBrowserConfig } from '../browser-base-config.ts'
 
 export class ArcConfig extends BaseBrowserConfig {
@@ -8,12 +15,22 @@ export class ArcConfig extends BaseBrowserConfig {
         downloadUrlTemplate: 'https://releases.arc.net/release/Arc-latest.dmg',
         installPathTemplate: '{{basePath}}/Arc.app/Contents/MacOS',
         executableTemplate: '{{installPath}}/Arc',
+        installArgs: {
+          dmg: {
+            mount: ['attach', '{{downloadedInstallerPath}}', '-mountpoint', '{{mountPoint}}', '-nobrowse', '-quiet'],
+            copy: ['-R', '{{appPath}}', '{{basePath}}/Arc.app'],
+            unmount: ['detach', '{{mountPoint}}', '-quiet']
+          }
+        }
       },
       windows: {
         arch: ['x64'],
         downloadUrlTemplate: 'https://releases.arc.net/windows/ArcInstaller.exe',
         installPathTemplate: '{{basePath}}\\Arc',
         executableTemplate: '{{installPath}}\\Arc.exe',
+        installArgs: {
+          exe: ['--silent', '--install', '--installdir={{installPath}}']
+        }
       },
     })
   }

@@ -1,18 +1,77 @@
+/**
+ * Base browser configuration module.
+ * Provides core types and base class for browser configurations.
+ * Defines the contract for browser-specific implementations.
+ * 
+ * @module browser-base-config
+ */
+
+import { dirname } from '@std/path'
+import { ensureDir } from '@std/fs'
+import { logger } from './logger.ts'
+import { downloadWithProgress, extractZip, execCommand, runInstaller } from './installer.ts'
+
 export type TemplateVariables = Record<string, string>
 
 // Define the supported platforms and architectures based on what's used across all browser configs
 export type SupportedPlatform = 'windows' | 'mac' | 'linux'
 export type SupportedArch = 'x64' | 'arm64'
 
+/**
+ * Installation arguments configuration for different installer types
+ */
+export interface InstallArgs {
+  /** Arguments for Windows .exe installers */
+  exe?: string[]
+  /** Arguments for macOS .pkg installers */
+  pkg?: string[]
+  /** Arguments for macOS .dmg handling */
+  dmg?: {
+    /** Arguments for mounting the DMG */
+    mount?: string[]
+    /** Arguments for copying the .app */
+    copy?: string[]
+    /** Arguments for unmounting the DMG */
+    unmount?: string[]
+  }
+  /** Arguments for Linux .deb installers */
+  deb?: string[]
+}
+
+/**
+ * Platform-specific configuration for a browser
+ */
 export interface PlatformConfig {
+  /** Supported architectures for this platform */
   readonly arch: SupportedArch[]
+  /** 
+   * Template for the download URL
+   * Supports variables: {{version}}, {{arch}}
+   */
   readonly downloadUrlTemplate?: string
+  /** 
+   * Function to resolve download URL dynamically
+   * Used when the URL can't be determined by a simple template
+   */
   readonly downloadUrlResolver?: (
     version: string,
     arch: SupportedArch,
   ) => Promise<string>
+  /** 
+   * Template for the installation path
+   * Supports variables: {{basePath}}, {{version}}
+   */
   readonly installPathTemplate: string
+  /** 
+   * Template for the executable path
+   * Supports variables: {{installPath}}
+   */
   readonly executableTemplate: string
+  /** 
+   * Installation arguments for different installer types
+   * All arguments support variable substitution using {{variableName}} syntax
+   */
+  readonly installArgs?: InstallArgs
 }
 
 export interface BrowserParams {
@@ -21,8 +80,35 @@ export interface BrowserParams {
   arch?: string
   basePath?: string
   installPath?: string
+  customBasePath?: string
 }
 
+/**
+ * Information about a browser installation
+ */
+export interface InstallationInfo {
+  /** Name of the browser */
+  browser: string
+  /** Version of the browser */
+  version?: string
+  /** Platform the browser was installed on */
+  platform: string
+  /** Architecture the browser was built for */
+  arch?: string
+  /** URL the browser was downloaded from */
+  downloadUrl: string
+  /** Whether this was installed to a custom path */
+  isCustomPath: boolean
+  /** Base path where the browser was installed */
+  basePath: string
+  /** When the browser was installed */
+  installDate: string
+}
+
+/**
+ * Base class for browser configurations
+ * Provides common functionality for managing browser installations
+ */
 export abstract class BaseBrowserConfig {
   constructor(
     public readonly name: string,
@@ -98,10 +184,291 @@ export abstract class BaseBrowserConfig {
     return config
   }
 
+  /**
+   * Replaces template variables in a string with their values
+   * @param template - String containing {{variableName}} placeholders
+   * @param vars - Object containing variable values
+   * @returns String with all variables replaced
+   * @throws {Error} If a required variable is missing
+   */
   protected replaceTemplate(template: string, vars: TemplateVariables): string {
     return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
       if (!(key in vars)) throw new Error(`Missing template variable: ${key}`)
       return vars[key]
     })
+  }
+
+  /**
+   * Installs the browser using the provided configuration
+   * @param params - Installation parameters including platform, version, arch, and optional customBasePath
+   * @throws {Error} If installation fails. If using customBasePath, will attempt to clean up created directories on failure.
+   */
+  async install(params: BrowserParams): Promise<void> {
+    const { platform, arch, customBasePath } = params
+    const tempDir = await Deno.makeTempDir()
+    let basePath: string = ''
+    
+    try {
+      logger.debug(`Resolving download URL for ${this.name} (platform: ${platform}, arch: ${arch})`)
+      const downloadUrl = await this.getDownloadUrl(params)
+      
+      const isCustomPath = !!customBasePath
+      if (customBasePath) {
+        logger.debug(`Using custom installation path: ${customBasePath}`)
+        // Create custom base directory if it doesn't exist
+        await ensureDir(customBasePath)
+        // Convert relative paths to absolute
+        basePath = customBasePath.startsWith('.') 
+          ? await Deno.realPath(customBasePath)
+          : customBasePath
+        logger.debug(`Resolved absolute base path: ${basePath}`)
+      } else {
+        const PLATFORM_PATHS = {
+          mac: '/Applications',
+          windows: 'C:\\Program Files',
+          linux: '/usr/local',
+        } as const
+        basePath = PLATFORM_PATHS[platform as keyof typeof PLATFORM_PATHS] ?? '/usr/local'
+        logger.debug(`Using default installation path: ${basePath}`)
+      }
+
+      const targetPath = this.getInstallPath({ ...params, basePath })
+      logger.debug(`Full installation target path: ${targetPath}`)
+      
+      const normalizedPlatform = platform === 'mac' ? 'mac' : platform === 'windows' ? 'windows' : 'linux'
+      const platformConfig = this.platforms[normalizedPlatform as SupportedPlatform]
+
+      logger.info(`Downloading ${this.name} from ${downloadUrl}...`)
+      const downloadedFile = await Deno.makeTempFile({ dir: tempDir })
+      logger.debug(`Created temporary file for download: ${downloadedFile}`)
+      await downloadWithProgress(downloadUrl, downloadedFile)
+      
+      logger.debug(`Ensuring target directory exists: ${dirname(targetPath)}`)
+      await ensureDir(dirname(targetPath))
+
+      const fileType = downloadUrl.split('.').pop()?.toLowerCase()
+      logger.debug(`Detected file type: ${fileType}`)
+      
+      switch(fileType) {
+        case 'zip':
+          logger.debug(`Extracting ZIP archive to ${targetPath}`)
+          await extractZip(downloadedFile, targetPath)
+          break
+        case 'gz':
+        case 'tgz':
+          logger.debug(`Extracting tar archive to ${targetPath}`)
+          await execCommand(
+            new Deno.Command('tar', {
+              args: ['xf', downloadedFile, '-C', targetPath],
+              stdout: 'piped',
+              stderr: 'piped',
+            }),
+            'Failed to extract tar file'
+          )
+          break
+        case 'exe':
+        case 'pkg':
+        case 'dmg':
+        case 'deb':
+          logger.debug(`Running platform installer for ${fileType} file`)
+          await runInstaller(downloadedFile, targetPath, platform, platformConfig)
+          break
+        default:
+          throw new Error(`Unsupported file format: ${downloadUrl}`)
+      }
+
+      // Store whether this was a custom path installation after the browser is installed
+      logger.debug(`Ensuring installation info directory exists: ${dirname(targetPath)}`)
+      await ensureDir(dirname(targetPath))
+      
+      let installations: InstallationInfo[] = []
+      
+      try {
+        const infoPath = `${targetPath}/.installation-info`
+        logger.debug(`Reading existing installation info from: ${infoPath}`)
+        const existingInfo = await Deno.readTextFile(infoPath)
+        installations = JSON.parse(existingInfo)
+        if (!Array.isArray(installations)) {
+          logger.debug('Converting legacy installation info format to array')
+          // Convert old format to array
+          const oldInfo = JSON.parse(existingInfo)
+          installations = oldInfo.isCustomPath !== undefined ? [oldInfo] : []
+        }
+      } catch (_) {
+        logger.debug('No existing installation info found, starting fresh')
+      }
+
+      // Add new installation info
+      logger.debug('Adding new installation record')
+      installations.push({
+        browser: this.name,
+        version: params.version,
+        platform,
+        arch,
+        downloadUrl,
+        isCustomPath,
+        basePath,
+        installDate: new Date().toISOString()
+      })
+
+      const infoPath = `${targetPath}/.installation-info`
+      logger.debug(`Writing updated installation info to: ${infoPath}`)
+      await Deno.writeTextFile(
+        infoPath,
+        JSON.stringify(installations, null, 2)
+      )
+
+      logger.info(`Successfully installed ${this.name} to ${targetPath}`)
+    } catch (error) {
+      // If installation fails and we created a custom directory, clean it up
+      if (customBasePath) {
+        logger.debug(`Installation failed, cleaning up custom directory: ${basePath}`)
+        try {
+          await Deno.remove(basePath, { recursive: true })
+        } catch (_) {
+          logger.debug(`Failed to clean up custom directory: ${basePath}`)
+        }
+      }
+      throw error
+    } finally {
+      logger.debug(`Cleaning up temporary directory: ${tempDir}`)
+      await Deno.remove(tempDir, { recursive: true })
+    }
+  }
+
+  /**
+   * Removes the browser installation
+   * @param params - Removal parameters including platform and optional customBasePath
+   * @throws {Error} If removal fails
+   * @note If the installation used a custom base path, that directory will be removed only if empty after browser removal
+   */
+  async remove(params: BrowserParams): Promise<void> {
+    const { platform } = params
+    const PLATFORM_PATHS = {
+      mac: '/Applications',
+      windows: 'C:\\Program Files',
+      linux: '/usr/local',
+    } as const
+    const defaultBasePath = PLATFORM_PATHS[platform as keyof typeof PLATFORM_PATHS] ?? '/usr/local'
+    const targetPath = this.getInstallPath({ ...params, basePath: defaultBasePath })
+    logger.debug(`Removing ${this.name} from: ${targetPath}`)
+    
+    try {
+      // Read installation info to determine if this was a custom path installation
+      let isCustomPath = false
+      let customBasePath = ''
+      try {
+        const infoPath = `${targetPath}/.installation-info`
+        logger.debug(`Reading installation info from: ${infoPath}`)
+        const installations = JSON.parse(await Deno.readTextFile(infoPath))
+        // Handle both old and new formats
+        if (Array.isArray(installations)) {
+          logger.debug('Found array-format installation info')
+          // Find the most recent installation of this browser
+          const installation = installations
+            .filter(i => i.browser === this.name)
+            .sort((a, b) => new Date(b.installDate).getTime() - new Date(a.installDate).getTime())[0]
+          
+          if (installation) {
+            logger.debug(`Found most recent installation from: ${installation.installDate}`)
+            isCustomPath = installation.isCustomPath
+            customBasePath = installation.basePath
+          }
+        } else {
+          logger.debug('Found legacy-format installation info')
+          // Legacy format
+          isCustomPath = installations.isCustomPath
+          customBasePath = installations.basePath
+        }
+      } catch (_) {
+        logger.debug('No installation info found, assuming default installation')
+      }
+
+      // Remove the browser installation directory
+      logger.debug(`Removing browser directory: ${targetPath}`)
+      await Deno.remove(targetPath, { recursive: true })
+      logger.info(`Successfully removed ${this.name} from ${targetPath}`)
+
+      // If this was a custom base path installation, try to clean up the base directory
+      if (isCustomPath && customBasePath) {
+        logger.debug(`Checking if custom base directory is empty: ${customBasePath}`)
+        try {
+          // Check if directory is empty
+          const dirEntries = Array.from(Deno.readDirSync(customBasePath))
+          if (dirEntries.length === 0) {
+            logger.debug('Custom directory is empty, removing it')
+            await Deno.remove(customBasePath)
+            logger.info(`Removed empty custom installation directory: ${customBasePath}`)
+          } else {
+            logger.debug('Custom directory not empty, leaving intact')
+            logger.info(`Custom installation directory not empty, leaving intact: ${customBasePath}`)
+          }
+        } catch (error) {
+          logger.warn(`Failed to clean up custom installation directory: ${error}`)
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to remove ${this.name}: ${error}`)
+      throw error
+    }
+  }
+
+  /**
+   * Gets the installation history for this browser
+   * @param params - Parameters to locate the installation directory
+   * @returns Array of installation records, sorted by date (most recent first)
+   */
+  async getInstallationHistory(params: BrowserParams): Promise<InstallationInfo[]> {
+    const { platform } = params
+    const PLATFORM_PATHS = {
+      mac: '/Applications',
+      windows: 'C:\\Program Files',
+      linux: '/usr/local',
+    } as const
+    const defaultBasePath = PLATFORM_PATHS[platform as keyof typeof PLATFORM_PATHS] ?? '/usr/local'
+    const targetPath = this.getInstallPath({ ...params, basePath: defaultBasePath })
+    logger.debug(`Getting installation history for ${this.name} from: ${targetPath}`)
+    
+    try {
+      const infoPath = `${targetPath}/.installation-info`
+      logger.debug(`Reading installation info from: ${infoPath}`)
+      const existingInfo = await Deno.readTextFile(infoPath)
+      let installations: InstallationInfo[] = JSON.parse(existingInfo)
+      
+      // Handle legacy format
+      if (!Array.isArray(installations)) {
+        logger.debug('Converting legacy installation info to array format')
+        const oldInfo = JSON.parse(existingInfo)
+        installations = oldInfo.isCustomPath !== undefined ? [{
+          browser: this.name,
+          platform,
+          isCustomPath: oldInfo.isCustomPath,
+          basePath: oldInfo.basePath,
+          downloadUrl: 'unknown', // Legacy format didn't store this
+          installDate: new Date(0).toISOString() // Use epoch for legacy entries
+        }] : []
+      }
+
+      // Filter to only this browser's installations and sort by date
+      const filtered = installations
+        .filter(i => i.browser === this.name)
+        .sort((a, b) => new Date(b.installDate).getTime() - new Date(a.installDate).getTime())
+      
+      logger.debug(`Found ${filtered.length} installation records for ${this.name}`)
+      return filtered
+    } catch (_) {
+      logger.debug(`No installation history found for ${this.name}`)
+      return []
+    }
+  }
+
+  /**
+   * Gets the most recent installation info for this browser
+   * @param params - Parameters to locate the installation directory
+   * @returns Most recent installation record or null if none found
+   */
+  async getLatestInstallation(params: BrowserParams): Promise<InstallationInfo | null> {
+    const history = await this.getInstallationHistory(params)
+    return history[0] ?? null
   }
 } 

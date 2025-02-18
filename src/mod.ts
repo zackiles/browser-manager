@@ -6,9 +6,11 @@ export {
   edge,
   brave,
   arc,
-} from './browser-config.ts'
+} from './browser-provider.ts'
 
 export type {
-  BrowserConfig,
+  BaseBrowserConfig as BrowserConfig,
   BrowserParams,
-} from './browser-config.ts'
+} from './browser-base-config.ts'
+
+export { install, remove } from './installer.ts'

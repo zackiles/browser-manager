@@ -1,3 +1,10 @@
+/**
+ * Google Chrome configuration module.
+ * Provides installation and configuration settings for Google Chrome.
+ * Supports Windows, macOS, and Linux platforms with dynamic version resolution.
+ * 
+ * @module browser-configs/chrome-config
+ */
 import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
 import { logger } from '../logger.ts'
 
@@ -77,6 +84,9 @@ export class ChromeConfig extends BaseBrowserConfig {
         },
         installPathTemplate: '{{basePath}}\\Google\\Chrome\\Application',
         executableTemplate: '{{installPath}}\\chrome.exe',
+        installArgs: {
+          exe: ['/silent', '/install', '/installsource=browser-manager', '/installdir={{installPath}}']
+        }
       },
       mac: {
         arch: ['x64', 'arm64'],
@@ -87,6 +97,13 @@ export class ChromeConfig extends BaseBrowserConfig {
         },
         installPathTemplate: '{{basePath}}/Google Chrome.app/Contents/MacOS',
         executableTemplate: '{{installPath}}/Google Chrome',
+        installArgs: {
+          dmg: {
+            mount: ['attach', '{{downloadedInstallerPath}}', '-mountpoint', '{{mountPoint}}', '-nobrowse', '-quiet'],
+            copy: ['-R', '{{appPath}}', '{{basePath}}/Google Chrome.app'],
+            unmount: ['detach', '{{mountPoint}}', '-quiet']
+          }
+        }
       },
       linux: {
         arch: ['x64', 'arm64'],
@@ -97,6 +114,9 @@ export class ChromeConfig extends BaseBrowserConfig {
         },
         installPathTemplate: '{{basePath}}/bin',
         executableTemplate: '{{installPath}}/google-chrome',
+        installArgs: {
+          deb: ['dpkg', '-i', '{{downloadedInstallerPath}}']
+        }
       },
     })
   }

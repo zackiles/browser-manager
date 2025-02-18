@@ -1,3 +1,10 @@
+/**
+ * Browser provider module.
+ * Exports browser configurations and types for all supported browsers.
+ * Acts as the main entry point for accessing browser configurations.
+ * 
+ * @module browser-provider
+ */
 import { ChromeConfig } from './browser-configs/chrome-config.ts'
 import { ChromiumConfig } from './browser-configs/chromium-config.ts'
 import { EdgeConfig } from './browser-configs/edge-config.ts'
