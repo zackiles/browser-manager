@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Base URL for binary downloads
-BASE_URL="https://raw.githubusercontent.com/zackiles/browser-manager/main/bin"
+BASE_URL="https://github.com/zackiles/browser-manager/releases/latest/download"
 
 print_step() {
     echo -e "${BLUE}==>${NC} ${BOLD}$1${NC}"
@@ -232,7 +232,11 @@ main() {
 
     print_step "Downloading browser-manager..."
     if command -v curl >/dev/null 2>&1; then
-        curl -L -o "$install_dir/$download_binary_name" "$download_url" || print_error "Download failed"
+        echo "Download URL: $download_url"
+        curl -v -L -o "$install_dir/$download_binary_name" "$download_url" || print_error "Download failed"
+        echo "Downloaded file contents (first few lines):"
+        head -n 5 "$install_dir/$download_binary_name" || true
+        file "$install_dir/$download_binary_name" || true
     elif command -v wget >/dev/null 2>&1; then
         wget -O "$install_dir/$download_binary_name" "$download_url" || print_error "Download failed"
     else

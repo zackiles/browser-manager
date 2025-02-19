@@ -137,3 +137,6 @@ dist
 
 # Deno
 .deno
+
+# Build output
+/bin/

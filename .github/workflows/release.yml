@@ -1,0 +1,84 @@
+name: Build and Release Binaries
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        run: |
+          # Create bin directory
+          mkdir -p bin
+
+          # Function to build and handle errors
+          build_binary() {
+            local target=$1
+            local output=$2
+            echo "Building for $target..."
+            if ! deno compile --allow-all --target "$target" --output "$output" scripts/cli.ts; then
+              echo "::error::Failed to build binary for $target"
+              return 1
+            fi
+            echo "✓ Successfully built $output"
+          }
+
+          # Build all targets
+          build_binary "x86_64-apple-darwin" "bin/browser-manager-macos-x86_64" || exit 1
+          build_binary "aarch64-apple-darwin" "bin/browser-manager-macos-arm64" || exit 1
+          build_binary "x86_64-unknown-linux-gnu" "bin/browser-manager-linux-x86_64" || exit 1
+          build_binary "x86_64-pc-windows-msvc" "bin/browser-manager-windows-x86_64.exe" || exit 1
+
+          # Generate checksums
+          cd bin
+          echo "Generating checksums..."
+          sha256sum browser-manager-* > checksums.txt
+          cd ..
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            bin/browser-manager-macos-x86_64
+            bin/browser-manager-macos-arm64
+            bin/browser-manager-linux-x86_64
+            bin/browser-manager-windows-x86_64.exe
+            bin/checksums.txt
+          token: ${{ secrets.GITHUB_TOKEN }}
+          generate_release_notes: true
+          body: |
+            ## Browser Manager ${{ steps.get_version.outputs.VERSION }}
+
+            ### Installation
+            ```bash
+            # Using curl
+            curl -fsSL https://raw.githubusercontent.com/zackiles/browser-manager/main/install.sh | bash
+
+            # Or using wget
+            wget -qO- https://raw.githubusercontent.com/zackiles/browser-manager/main/install.sh | bash
+            ```
+
+            ### Checksums
+            SHA-256 checksums for all binaries are provided in the `checksums.txt` file. 
