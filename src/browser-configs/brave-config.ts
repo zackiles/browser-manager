@@ -7,6 +7,7 @@
  */
 import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
 import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
+import { logger } from '../logger.ts'
 
 export class BraveConfig extends BaseBrowserConfig {
   constructor() {
@@ -50,9 +51,10 @@ export class BraveConfig extends BaseBrowserConfig {
   }
 
   /**
-   * Gets the latest available version for Brave on the specified platform and architecture
-   * @param platform - Target platform
-   * @param arch - Target architecture
+   * Gets the latest available version of Brave Browser.
+   * Fetches from GitHub releases API.
+   * @param platform - Target platform (windows, mac, linux)
+   * @param arch - Target architecture (x64, arm64)
    * @returns Promise resolving to the latest version string
    */
   override async getLatestVersion(
@@ -61,29 +63,21 @@ export class BraveConfig extends BaseBrowserConfig {
   ): Promise<string> {
     const currentPlatform = platform ?? getCurrentPlatform()
     const currentArch = arch ?? getCurrentArch()
+    
     return this.getCachedVersion(
       `${currentPlatform}-${currentArch}`,
       async () => {
-        const response = await fetch(
-          'https://api.github.com/repos/brave/brave-browser/releases/latest',
-        )
+        const response = await fetch('https://api.github.com/repos/brave/brave-browser/releases/latest')
         if (!response.ok) {
-          throw new Error(`Failed to fetch Brave versions: ${response.statusText}`)
+          throw new Error(`Failed to fetch latest Brave version: ${response.statusText}`)
         }
 
         const data = await response.json()
-        const version = data.tag_name.replace('v', '')
-        
-        // Validate platform and architecture support
-        if (!this.isValidPlatform(currentPlatform)) {
-          throw new Error(`Unsupported platform: ${currentPlatform}`)
-        }
-        if (!this.isValidArch(currentPlatform, currentArch)) {
-          throw new Error(`Unsupported architecture: ${currentArch} for platform ${currentPlatform}`)
-        }
-
+        // Remove 'v' prefix from tag name
+        const version = data.tag_name.replace(/^v/, '')
+        logger.debug(`Latest Brave version: ${version}`)
         return version
-      },
+      }
     )
   }
 } 

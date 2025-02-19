@@ -1,6 +1,5 @@
 import { BlobReader, ZipReader } from '@zip-js/zip-js'
 import { dirname, normalize } from '@std/path'
-import ProgressBar from '@deno-library/progress'
 import { writeAll } from '@std/io/write-all'
 import { logger } from './logger.ts'
 import type { InstallArgs } from './browser-base-config.ts'
@@ -45,12 +44,9 @@ export async function downloadWithProgress(
   if (!response.ok) throw new Error(`Failed to download: HTTP ${response.status}`)
   
   const contentLength = Number(response.headers.get('content-length'))
-  const progress = new ProgressBar({
+  const progress = logger.createProgressBar({
     title: 'Downloading...',
     total: contentLength,
-    display: ':completed/:total :percent [:bar] :bytesPerSecond',
-    complete: '=',
-    incomplete: '-',
   })
 
   try {
@@ -64,11 +60,11 @@ export async function downloadWithProgress(
       if (done) break
       await writeAll(file, value)
       downloaded += value.length
-      await progress.render(downloaded)
+      logger.updateProgress(progress, downloaded)
     }
     file.close()
   } finally {
-    progress.end()
+    logger.endProgress(progress)
   }
 }
 
@@ -86,12 +82,9 @@ export async function extractZip(
   const zipReader = new ZipReader(new BlobReader(new Blob([file])))
   const entries = await zipReader.getEntries()
 
-  const progress = new ProgressBar({
+  const progress = logger.createProgressBar({
     title: 'Extracting...',
     total: entries.length,
-    display: ':completed/:total :percent [:bar]',
-    complete: '=',
-    incomplete: '-',
   })
 
   try {
@@ -126,10 +119,10 @@ export async function extractZip(
           await Deno.chmod(path, 0o755)
         }
       }
-      await progress.render(index + 1)
+      logger.updateProgress(progress, index + 1)
     }))
   } finally {
-    progress.end()
+    logger.endProgress(progress)
     await zipReader.close()
   }
 }

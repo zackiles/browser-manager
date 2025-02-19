@@ -51,33 +51,23 @@ export class ArcConfig extends BaseBrowserConfig {
   }
 
   /**
-   * Gets the latest available version for Arc browser
-   * @param platform - Target platform
-   * @param arch - Target architecture
-   * @returns Promise resolving to 'latest' since Arc only supports latest version
+   * Gets the latest available version of Arc Browser.
+   * Arc Browser only provides the latest version and doesn't expose version numbers.
+   * @param platform - Target platform (windows, mac)
+   * @param arch - Target architecture (x64, arm64)
+   * @returns Promise resolving to "latest" as Arc only provides latest version
    * @throws Error if platform is not supported
    */
   override async getLatestVersion(
     platform?: SupportedPlatform,
-    arch?: SupportedArch
+    _arch?: SupportedArch
   ): Promise<string> {
     const currentPlatform = platform ?? getCurrentPlatform()
-    const currentArch = arch ?? getCurrentArch()
-    return this.getCachedVersion(
-      `${currentPlatform}-${currentArch}`,
-      async () => {
-        const normalizedPlatform = this.normalizePlatform(currentPlatform)
-        if (!['mac', 'windows'].includes(normalizedPlatform)) {
-          throw new Error('Arc Browser is only supported on macOS and Windows.')
-        }
+    
+    if (!['mac', 'windows'].includes(currentPlatform)) {
+      throw new Error('Arc Browser is only supported on macOS and Windows.')
+    }
 
-        if (normalizedPlatform === 'windows' && currentArch !== 'x64') {
-          throw new Error('Arc Browser on Windows only supports x64 architecture.')
-        }
-
-        logger.debug(`Arc Browser always uses 'latest' version`)
-        return 'latest'
-      }
-    )
+    return Promise.resolve('latest')
   }
 } 

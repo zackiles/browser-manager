@@ -85,11 +85,11 @@ export interface PlatformConfig {
  * Used to specify the target platform, version, and installation paths.
  */
 export interface BrowserParams {
-  /** Target platform for the browser */
-  platform: string
+  /** Target platform for the browser (optional, defaults to current platform) */
+  platform?: string
   /** Specific version to install (optional) */
   version?: string
-  /** Target architecture (optional) */
+  /** Target architecture (optional, defaults to current architecture) */
   arch?: string
   /** Base installation path (optional) */
   basePath?: string
@@ -169,7 +169,7 @@ export abstract class BaseBrowserConfig {
    * @returns Promise resolving to the download URL
    * @throws Error if the platform configuration is invalid or URL cannot be determined
    */
-  async getDownloadUrl({ platform, version, arch }: BrowserParams): Promise<string> {
+  async getDownloadUrl({ platform = getCurrentPlatform(), version, arch }: BrowserParams): Promise<string> {
     const normalizedPlatform = this.normalizePlatform(platform)
     const normalizedArch = arch?.toLowerCase() as SupportedArch
 
@@ -198,7 +198,7 @@ export abstract class BaseBrowserConfig {
    * @param params - Browser parameters including platform, base path, and version
    * @returns Installation path string
    */
-  getInstallPath({ platform, basePath, version = '' }: BrowserParams): string {
+  getInstallPath({ platform = getCurrentPlatform(), basePath, version = '' }: BrowserParams): string {
     const config = this.validatePlatformConfig(this.normalizePlatform(platform))
     return this.replaceTemplate(config.installPathTemplate, {
       basePath: basePath ?? '',
@@ -211,7 +211,7 @@ export abstract class BaseBrowserConfig {
    * @param params - Browser parameters including platform and installation path
    * @returns Executable path string
    */
-  getExecutable({ platform, installPath }: BrowserParams): string {
+  getExecutable({ platform = getCurrentPlatform(), installPath }: BrowserParams): string {
     const config = this.validatePlatformConfig(this.normalizePlatform(platform))
     return this.replaceTemplate(config.executableTemplate, {
       installPath: installPath ?? '',
@@ -288,16 +288,19 @@ export abstract class BaseBrowserConfig {
    * @throws {Error} If installation fails. If using customBasePath, will attempt to clean up created directories on failure.
    */
   async install(params: BrowserParams): Promise<void> {
-    // Auto-detect platform and arch if not provided
-    const platform = params.platform ?? getCurrentPlatform()
-    const arch = params.arch ?? getCurrentArch()
-    const { customBasePath } = params
+    const {
+      platform = getCurrentPlatform(),
+      arch = getCurrentArch(),
+      customBasePath,
+      version,
+    } = params
+
     const tempDir = await Deno.makeTempDir()
     let basePath: string = ''
     
     try {
       logger.debug(`Resolving download URL for ${this.name} (platform: ${platform}, arch: ${arch})`)
-      const downloadUrl = await this.getDownloadUrl({ ...params, platform, arch })
+      const downloadUrl = await this.getDownloadUrl({ platform, version, arch })
       
       const isCustomPath = !!customBasePath
       if (customBasePath) {
@@ -319,7 +322,7 @@ export abstract class BaseBrowserConfig {
         logger.debug(`Using default installation path: ${basePath}`)
       }
 
-      const targetPath = this.getInstallPath({ ...params, basePath })
+      const targetPath = this.getInstallPath({ platform, basePath, version })
       logger.debug(`Full installation target path: ${targetPath}`)
       
       const normalizedPlatform = platform === 'mac' ? 'mac' : platform === 'windows' ? 'windows' : 'linux'

@@ -60,12 +60,17 @@ version              # Display CLI version
 --version <version>         # Specify version to install
 --custom-base-path <path>  # Use custom installation path
 --help                     # Show help message
+--silent                   # Disable all non-error output (by default, debug logs are enabled)
 ```
 
 ### As a Library
 
 ```typescript
 import { chromium } from "jsr:@browser-tools/browser-manager"
+
+// Enable debug logs (optional)
+// By default, only errors are shown. Set this to see progress bars and debug info.
+Deno.env.set('BROWSER_MANAGER_DEBUG', '1')
 
 // Install latest version of Chromium (platform and arch auto-detected)
 await chromium.install()

@@ -45,6 +45,7 @@ interface CliArgs {
   version?: string;
   "custom-base-path"?: string;
   help?: boolean;
+  silent?: boolean;
 }
 
 /**
@@ -69,6 +70,7 @@ Commands:
 Options:
   --version <version>         Specify the version to install
   --custom-base-path <path>  Specify a custom installation path
+  --silent                   Disable all non-error output
   --help                     Show this help message
 
 Examples:
@@ -76,7 +78,7 @@ Examples:
   browser-manager edge install --version "120.0.6099.109"
   browser-manager brave remove --custom-base-path "/custom/path"
   browser-manager chromium getInstallationHistory
-  browser-manager arc getLatestVersion
+  browser-manager arc getLatestVersion --silent
   browser-manager version
 `);
 };
@@ -161,11 +163,16 @@ const handleHistory = async ({ browser, platform, arch, customBasePath }: {
  * Main CLI execution function
  */
 const main = async () => {
+  // Set debug mode by default unless --silent is specified
+  if (Deno.args.indexOf('--silent') === -1) {
+    Deno.env.set('BROWSER_MANAGER_DEBUG', '1')
+  }
+
   // Parse command line arguments
   const args = parseArgs(Deno.args, {
     string: ["version", "custom-base-path"],
-    boolean: ["help"],
-    alias: { h: "help", v: "version", p: "custom-base-path" },
+    boolean: ["help", "silent"],
+    alias: { h: "help", v: "version", p: "custom-base-path", s: "silent" },
   });
 
   // Show help if requested or no arguments provided

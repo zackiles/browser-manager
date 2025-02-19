@@ -153,6 +153,7 @@ export class ChromeConfig extends BaseBrowserConfig {
 
   /**
    * Gets the latest available version of Google Chrome.
+   * Fetches from Chrome's version API.
    * @param platform - Target platform (windows, mac, linux)
    * @param arch - Target architecture (x64, arm64)
    * @returns Promise resolving to the latest version string
@@ -163,30 +164,14 @@ export class ChromeConfig extends BaseBrowserConfig {
   ): Promise<string> {
     const currentPlatform = platform ?? getCurrentPlatform()
     const currentArch = arch ?? getCurrentArch()
+    
     return this.getCachedVersion(
       `${currentPlatform}-${currentArch}`,
       async () => {
         const versions = await fetchVersionsData()
-        const platformKey = currentPlatform === 'windows' ? 'win' : currentPlatform
-
-        // Filter versions that have a download for this platform
-        const availableVersions = Object.entries(versions)
-          .filter(([_, urls]) => !!urls[platformKey])
-          .map(([version]) => version)
-          // Special handling for M1 Macs - filter out versions before 88.0.4324.150
-          .filter((version) => {
-            if (currentPlatform === 'mac' && currentArch === 'arm64') {
-              return compareVersions(version, '88.0.4324.150') >= 0
-            }
-            return true
-          })
-          .sort(compareVersions)
-
-        if (!availableVersions.length) {
-          throw new Error(`No available versions found for ${currentPlatform}/${currentArch}`)
-        }
-
-        return availableVersions[availableVersions.length - 1]
+        const latestVersion = Object.keys(versions)[0]
+        logger.debug(`Latest Chrome version: ${latestVersion}`)
+        return latestVersion
       }
     )
   }

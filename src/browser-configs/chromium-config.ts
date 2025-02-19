@@ -133,6 +133,18 @@ async function fetchChromiumBuildNumber(
 }
 
 /**
+ * Gets the download URL for a specific build number.
+ * @param platform - Target platform
+ * @param arch - Target architecture
+ * @param buildNumber - Build number to get URL for
+ * @returns The download URL for the specified build
+ */
+function getDownloadUrl(platform: SupportedPlatform, arch: SupportedArch, buildNumber: string): string {
+  const chromiumPlatform = getChromiumPlatform(platform, arch)
+  return `https://commondatastorage.googleapis.com/chromium-browser-snapshots/${chromiumPlatform}/${buildNumber}/chrome-${platform === 'windows' ? 'win' : platform}.zip`
+}
+
+/**
  * Finds the nearest available build number that has a downloadable snapshot.
  * @param platform - Target platform
  * @param arch - Target architecture
@@ -147,7 +159,6 @@ async function findNearestAvailableBuild(
 ): Promise<string> {
   const maxAttempts = 5
   const currentBuild = Number.parseInt(buildNumber, 10)
-  const chromiumPlatform = getChromiumPlatform(platform, arch)
 
   for (let i = 0; i < maxAttempts; i++) {
     const [testBuildUp, testBuildDown] = [
@@ -156,8 +167,7 @@ async function findNearestAvailableBuild(
     ]
 
     const testUrls = [testBuildUp, testBuildDown].map(
-      (build) =>
-        `https://commondatastorage.googleapis.com/chromium-browser-snapshots/${chromiumPlatform}/${build}/chrome-${platform === 'windows' ? 'win' : platform}.zip`,
+      (build) => getDownloadUrl(platform, arch, build)
     )
 
     for (const testUrl of testUrls) {
@@ -188,24 +198,28 @@ export class ChromiumConfig extends BaseBrowserConfig {
     super('chromium', {
       windows: {
         arch: ['x64'],
-        downloadUrlResolver: async (version: string) => 
-          `https://storage.googleapis.com/chromium-browser-snapshots/Win_x64/${version}/chrome-win.zip`,
+        downloadUrlResolver: async (version: string) => {
+          const buildNumber = await fetchChromiumBuildNumber(version, 'windows', 'x64')
+          return getDownloadUrl('windows', 'x64', buildNumber)
+        },
         installPathTemplate: '{{basePath}}\\Chromium\\Application',
         executableTemplate: '{{installPath}}\\chrome.exe'
       },
       mac: {
         arch: ['x64', 'arm64'],
         downloadUrlResolver: async (version: string, arch: SupportedArch) => {
-          const platform = arch === 'arm64' ? 'Mac_Arm' : 'Mac'
-          return `https://storage.googleapis.com/chromium-browser-snapshots/${platform}/${version}/chrome-mac.zip`
+          const buildNumber = await fetchChromiumBuildNumber(version, 'mac', arch)
+          return getDownloadUrl('mac', arch, buildNumber)
         },
         installPathTemplate: '{{basePath}}/Chromium.app',
         executableTemplate: '{{installPath}}/Contents/MacOS/Chromium'
       },
       linux: {
         arch: ['x64'],
-        downloadUrlResolver: async (version: string) =>
-          `https://storage.googleapis.com/chromium-browser-snapshots/Linux_x64/${version}/chrome-linux.zip`,
+        downloadUrlResolver: async (version: string) => {
+          const buildNumber = await fetchChromiumBuildNumber(version, 'linux', 'x64')
+          return getDownloadUrl('linux', 'x64', buildNumber)
+        },
         installPathTemplate: '/usr/local/chromium',
         executableTemplate: '{{installPath}}/chrome'
       }
@@ -214,10 +228,10 @@ export class ChromiumConfig extends BaseBrowserConfig {
 
   /**
    * Gets the latest available version of Chromium.
-   * Fetches the latest position number from the Chromium Continuous Build API.
+   * Uses the Chromium API to fetch the latest stable version.
    * @param platform - Target platform (windows, mac, linux)
    * @param arch - Target architecture (x64, arm64)
-   * @returns Promise resolving to the latest version string (position number)
+   * @returns Promise resolving to the latest version string
    */
   override async getLatestVersion(
     platform?: SupportedPlatform,
@@ -225,30 +239,27 @@ export class ChromiumConfig extends BaseBrowserConfig {
   ): Promise<string> {
     const currentPlatform = platform ?? getCurrentPlatform()
     const currentArch = arch ?? getCurrentArch()
+    
     return this.getCachedVersion(
       `${currentPlatform}-${currentArch}`,
       async () => {
-        const platformKey = this.getPlatformKey(currentPlatform, currentArch)
-        const response = await fetch(
-          `https://www.googleapis.com/storage/v1/b/chromium-browser-snapshots/o?delimiter=/&prefix=${platformKey}/&alt=json`,
-        )
+        const chromiumPlatform = getChromiumPlatform(currentPlatform, currentArch)
+        const url = 'https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=' + chromiumPlatform + '&num=1'
+        
+        logger.debug(`Fetching latest Chromium version from: ${url}`)
+        const response = await fetch(url)
         if (!response.ok) {
-          throw new Error(`Failed to fetch Chromium versions: ${response.statusText}`)
+          throw new Error(`Failed to fetch latest Chromium version: ${response.statusText}`)
         }
 
         const data = await response.json()
-        const versions = data.prefixes
-          ?.map((prefix: string) => prefix.split('/')[1])
-          .filter((v: string) => /^\d+$/.test(v))
-          .map(Number)
-          .sort((a: number, b: number) => b - a) ?? []
-
-        if (!versions.length) {
+        if (!data.length) {
           throw new Error(`No versions found for ${currentPlatform}/${currentArch}`)
         }
 
-        return versions[0].toString()
-      },
+        logger.debug(`Latest Chromium version: ${data[0].version}`)
+        return data[0].version
+      }
     )
   }
 

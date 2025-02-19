@@ -1,9 +1,9 @@
 {
   "name": "@browser-tools/browser-manager",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "exports": "./src/mod.ts",
   "tasks": {
-    "dev": "deno run --watch --allow-sys --allow-env --allow-net --allow-write --allow-read ./scripts/main.ts",
+    "dev": "deno run --watch --allow-sys --allow-env --allow-net --allow-write --allow-read ./scripts/test-cli.ts",
     "build": "deno run --allow-sys --allow-env --allow-net --allow-write --allow-read --allow-run ./scripts/build.ts"
   },
   "permissions": {
