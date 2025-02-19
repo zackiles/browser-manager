@@ -173,13 +173,25 @@ add_to_path_with_prompt() {
                 read -r response
                 response=${response:-Y}
                 if [[ "$response" =~ ^[Yy] ]]; then
-                    echo "export PATH=\"$install_dir:\$PATH\"" >> "$shell_config"
+                    # Add a newline if the file doesn't end with one
+                    [ -f "$shell_config" ] && [ -s "$shell_config" ] && tail -c1 "$shell_config" | read -r _ || echo "" >> "$shell_config"
+                    # Add the PATH modification with a comment
+                    {
+                        echo "# Added by browser-manager installer"
+                        echo "export PATH=\"\${PATH:+\${PATH}:}$install_dir\""
+                    } >> "$shell_config"
                     print_success "Added $install_dir to PATH in $shell_config"
                     echo "Please run 'source $shell_config' or restart your terminal for the changes to take effect."
                 fi
             else
                 # Non-interactive mode (e.g., curl | bash)
-                echo "export PATH=\"$install_dir:\$PATH\"" >> "$shell_config"
+                # Add a newline if the file doesn't end with one
+                [ -f "$shell_config" ] && [ -s "$shell_config" ] && tail -c1 "$shell_config" | read -r _ || echo "" >> "$shell_config"
+                # Add the PATH modification with a comment
+                {
+                    echo "# Added by browser-manager installer"
+                    echo "export PATH=\"\${PATH:+\${PATH}:}$install_dir\""
+                } >> "$shell_config"
                 print_success "Added $install_dir to PATH in $shell_config"
                 echo "Please run 'source $shell_config' or restart your terminal for the changes to take effect."
             fi
