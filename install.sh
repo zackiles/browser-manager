@@ -24,6 +24,39 @@ print_error() {
     exit 1
 }
 
+# Verify checksum of downloaded binary
+verify_checksum() {
+    local file=$1
+    local expected_checksum
+    local actual_checksum
+
+    if ! command -v sha256sum >/dev/null 2>&1; then
+        if command -v shasum >/dev/null 2>&1; then
+            actual_checksum=$(shasum -a 256 "$file" | cut -d ' ' -f 1)
+        else
+            echo "Warning: sha256sum or shasum not found, skipping checksum verification"
+            return 0
+        fi
+    else
+        actual_checksum=$(sha256sum "$file" | cut -d ' ' -f 1)
+    fi
+
+    # Download checksum file
+    if command -v curl >/dev/null 2>&1; then
+        expected_checksum=$(curl -fsSL "${file}.sha256" | cut -d ' ' -f 1)
+    elif command -v wget >/dev/null 2>&1; then
+        expected_checksum=$(wget -qO- "${file}.sha256" | cut -d ' ' -f 1)
+    else
+        echo "Warning: Neither curl nor wget found, skipping checksum verification"
+        return 0
+    fi
+
+    if [ "$actual_checksum" != "$expected_checksum" ]; then
+        print_error "Checksum verification failed! Expected: $expected_checksum, got: $actual_checksum"
+    fi
+    print_success "Checksum verified successfully"
+}
+
 # Detect OS and architecture
 detect_platform() {
     local os arch
@@ -232,17 +265,16 @@ main() {
 
     print_step "Downloading browser-manager..."
     if command -v curl >/dev/null 2>&1; then
-        echo "Download URL: $download_url"
-        curl -v -L -o "$install_dir/$download_binary_name" "$download_url" || print_error "Download failed"
-        echo "Downloaded file contents (first few lines):"
-        head -n 5 "$install_dir/$download_binary_name" || true
-        file "$install_dir/$download_binary_name" || true
+        curl -L -o "$install_dir/$download_binary_name" "$download_url" || print_error "Download failed"
     elif command -v wget >/dev/null 2>&1; then
         wget -O "$install_dir/$download_binary_name" "$download_url" || print_error "Download failed"
     else
         print_error "Neither curl nor wget found"
     fi
     print_success "Downloaded browser-manager"
+
+    print_step "Verifying checksum..."
+    verify_checksum "$install_dir/$download_binary_name"
 
     print_step "Setting permissions and renaming binary..."
     chmod +x "$install_dir/$download_binary_name"

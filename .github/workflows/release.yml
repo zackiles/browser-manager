@@ -47,10 +47,26 @@ jobs:
           build_binary "x86_64-unknown-linux-gnu" "bin/browser-manager-linux-x86_64" || exit 1
           build_binary "x86_64-pc-windows-msvc" "bin/browser-manager-windows-x86_64.exe" || exit 1
 
-          # Generate checksums
+      - name: Generate checksums and signature
+        run: |
           cd bin
-          echo "Generating checksums..."
-          sha256sum browser-manager-* > checksums.txt
+          # Generate individual checksums
+          for file in browser-manager-*; do
+            sha256sum "$file" > "${file}.sha256"
+          done
+          
+          # Generate combined checksums file
+          echo "# SHA-256 checksums for browser-manager ${{ steps.get_version.outputs.VERSION }}" > checksums.txt
+          echo "# Generated on $(date -u)" >> checksums.txt
+          echo "# To verify: sha256sum -c checksums.txt" >> checksums.txt
+          echo "" >> checksums.txt
+          sha256sum browser-manager-* >> checksums.txt
+          
+          # Sign the checksums file with GPG if a key is available
+          if [[ -n "${{ secrets.GPG_PRIVATE_KEY }}" ]]; then
+            echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --import
+            gpg --detach-sign --armor checksums.txt
+          fi
           cd ..
 
       - name: Create Release
@@ -65,7 +81,12 @@ jobs:
             bin/browser-manager-macos-arm64
             bin/browser-manager-linux-x86_64
             bin/browser-manager-windows-x86_64.exe
+            bin/browser-manager-macos-x86_64.sha256
+            bin/browser-manager-macos-arm64.sha256
+            bin/browser-manager-linux-x86_64.sha256
+            bin/browser-manager-windows-x86_64.exe.sha256
             bin/checksums.txt
+            bin/checksums.txt.asc
           token: ${{ secrets.GITHUB_TOKEN }}
           generate_release_notes: true
           body: |
@@ -80,5 +101,28 @@ jobs:
             wget -qO- https://raw.githubusercontent.com/zackiles/browser-manager/main/install.sh | bash
             ```
 
-            ### Checksums
-            SHA-256 checksums for all binaries are provided in the `checksums.txt` file. 
+            ### Verifying Checksums
+            Each binary comes with its own `.sha256` checksum file. You can verify the integrity of your download using:
+            ```bash
+            # Download the binary and its checksum
+            curl -LO https://github.com/zackiles/browser-manager/releases/latest/download/browser-manager-[YOUR-PLATFORM]
+            curl -LO https://github.com/zackiles/browser-manager/releases/latest/download/browser-manager-[YOUR-PLATFORM].sha256
+
+            # Verify the checksum
+            sha256sum -c browser-manager-[YOUR-PLATFORM].sha256
+            ```
+
+            Alternatively, download `checksums.txt` to verify all binaries at once:
+            ```bash
+            sha256sum -c checksums.txt
+            ```
+
+            ### GPG Verification
+            The `checksums.txt` file is signed with our release GPG key. To verify the signature:
+            ```bash
+            # Download the signature
+            curl -LO https://github.com/zackiles/browser-manager/releases/latest/download/checksums.txt.asc
+
+            # Verify the signature
+            gpg --verify checksums.txt.asc checksums.txt
+            ``` 
