@@ -49,7 +49,7 @@ interface CliArgs {
  * Prints CLI usage information including available commands and examples
  */
 const printUsage = () => {
-  console.log(`
+  logger.info(`
 Browser Manager v${VERSION}
 
 Usage: browser-manager <browser> <command> [options]
@@ -106,7 +106,7 @@ const handleInstall = async ({ browser, browserName, platform, arch, version, cu
 }) => {
   const params: BrowserParams = { platform, arch, version, customBasePath };
   await browser.install(params);
-  console.log(`Successfully installed ${browserName}`);
+  logger.info(`Successfully installed ${browserName}`);
 };
 
 /**
@@ -122,7 +122,7 @@ const handleRemove = async ({ browser, browserName, platform, arch, customBasePa
 }) => {
   const params: BrowserParams = { platform, arch, customBasePath };
   await browser.remove(params);
-  console.log(`Successfully removed ${browserName}`);
+  logger.info(`Successfully removed ${browserName}`);
 };
 
 /**
@@ -138,20 +138,20 @@ const handleHistory = async ({ browser, platform, arch, customBasePath }: {
   const params: BrowserParams = { platform, arch, customBasePath };
   const history = await browser.getInstallationHistory(params);
   if (history.length === 0) {
-    console.log("No installation history found");
+    logger.info("No installation history found");
     return;
   }
 
-  console.log("Installation History:");
+  logger.info("Installation History:");
   history.forEach((entry, index) => {
-    console.log(`\nInstallation ${index + 1}:`);
-    console.log(`  Browser: ${entry.browser}`);
-    console.log(`  Version: ${entry.version ?? "unknown"}`);
-    console.log(`  Platform: ${entry.platform}`);
-    console.log(`  Architecture: ${entry.arch ?? "unknown"}`);
-    console.log(`  Installation Date: ${entry.installDate}`);
-    console.log(`  Base Path: ${entry.basePath}`);
-    console.log(`  Custom Installation: ${entry.isCustomPath ? "Yes" : "No"}`);
+    logger.info(`\nInstallation ${index + 1}:`);
+    logger.info(`  Browser: ${entry.browser}`);
+    logger.info(`  Version: ${entry.version ?? "unknown"}`);
+    logger.info(`  Platform: ${entry.platform}`);
+    logger.info(`  Architecture: ${entry.arch ?? "unknown"}`);
+    logger.info(`  Installation Date: ${entry.installDate}`);
+    logger.info(`  Base Path: ${entry.basePath}`);
+    logger.info(`  Custom Installation: ${entry.isCustomPath ? "Yes" : "No"}`);
   });
 };
 
@@ -177,7 +177,7 @@ const main = async () => {
 
   // Handle version command separately as it doesn't require a browser
   if (command === "version") {
-    console.log(`Browser Manager v${VERSION}`);
+    logger.info(`Browser Manager v${VERSION}`);
     Deno.exit(0);
   }
 
@@ -228,7 +228,7 @@ const main = async () => {
       }
       case "getLatestVersion": {
         const latestVersion = await browser.getLatestVersion(platform, arch);
-        console.log(`Latest version of ${browserName}: ${latestVersion}`);
+        logger.info(`Latest version of ${browserName}: ${latestVersion}`);
         break;
       }
     }

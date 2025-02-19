@@ -3,7 +3,7 @@ import { dirname, normalize } from '@std/path'
 import ProgressBar from '@deno-library/progress'
 import { writeAll } from '@std/io/write-all'
 import { logger } from './logger.ts'
-import type { PlatformConfig, InstallArgs } from './browser-base-config.ts'
+import type { InstallArgs } from './browser-base-config.ts'
 
 /**
  * Browser installation utilities for managing browser installations across platforms.
@@ -15,6 +15,7 @@ import type { PlatformConfig, InstallArgs } from './browser-base-config.ts'
  * @module installer
  */
 
+/** Default installation paths for each supported platform */
 export const PLATFORM_PATHS = {
   mac: '/Applications',
   windows: 'C:\\Program Files',
@@ -29,12 +30,17 @@ export const PLATFORM_PATHS = {
 const EXECUTABLES = ['.exe', 'chrome', 'brave', 'msedge', 'chromium'] as const
 
 /**
- * Downloads a file with progress tracking
- * @param url - URL to download from
- * @param targetPath - Path to save the file to
- * @throws {Error} If download fails
+ * Downloads a file from a URL with progress tracking.
+ * @param url - The URL to download from
+ * @param destinationPath - The path where the file should be saved
+ * @param browser - Name of the browser being downloaded (for progress display)
+ * @returns Promise that resolves when download is complete
  */
-export async function downloadWithProgress(url: string, targetPath: string): Promise<void> {
+export async function downloadWithProgress(
+  url: string,
+  destinationPath: string,
+  browser: string
+): Promise<void> {
   const response = await fetch(url)
   if (!response.ok) throw new Error(`Failed to download: HTTP ${response.status}`)
   
@@ -48,7 +54,7 @@ export async function downloadWithProgress(url: string, targetPath: string): Pro
   })
 
   try {
-    const file = await Deno.open(targetPath, { write: true, create: true })
+    const file = await Deno.open(destinationPath, { write: true, create: true })
     const reader = response.body?.getReader()
     if (!reader) throw new Error('Failed to read response body')
 
@@ -67,10 +73,16 @@ export async function downloadWithProgress(url: string, targetPath: string): Pro
 }
 
 /**
- * Extracts a zip file with progress tracking
+ * Extracts a ZIP archive to a specified destination.
+ * @param zipPath - Path to the ZIP file
+ * @param destinationPath - Directory to extract to
+ * @returns Promise that resolves when extraction is complete
  */
-export async function extractZip(filePath: string, targetDir: string): Promise<void> {
-  const file = await Deno.readFile(filePath)
+export async function extractZip(
+  zipPath: string,
+  destinationPath: string
+): Promise<void> {
+  const file = await Deno.readFile(zipPath)
   const zipReader = new ZipReader(new BlobReader(new Blob([file])))
   const entries = await zipReader.getEntries()
 
@@ -84,8 +96,8 @@ export async function extractZip(filePath: string, targetDir: string): Promise<v
 
   try {
     await Promise.all(entries.map(async (entry, index) => {
-      const path = normalize(`${targetDir}/${entry.filename}`)
-      if (!path.startsWith(targetDir)) {
+      const path = normalize(`${destinationPath}/${entry.filename}`)
+      if (!path.startsWith(destinationPath)) {
         throw new Error(`Invalid path in ZIP: ${entry.filename}`)
       }
 
@@ -123,9 +135,15 @@ export async function extractZip(filePath: string, targetDir: string): Promise<v
 }
 
 /**
- * Executes a command with error handling
+ * Executes a command with error handling and logging.
+ * @param command - The Deno.Command to execute
+ * @param errorMessage - Error message prefix to use if the command fails
+ * @throws Error if the command exits with a non-zero status
  */
-export async function execCommand(command: Deno.Command, errorMessage: string): Promise<void> {
+export async function execCommand(
+  command: Deno.Command,
+  errorMessage: string
+): Promise<void> {
   const { code, stderr } = await command.output()
   if (code !== 0) {
     const error = new TextDecoder().decode(stderr)
@@ -196,73 +214,71 @@ export async function handleDmgInstall(
 }
 
 /**
- * Runs platform-specific installers
- * @param downloadedFile - Path to the downloaded installer file (temporary location)
- * @param targetPath - Final installation path where the browser will be installed
- * @param platform - Target platform (windows, mac, linux)
- * @param config - Platform-specific configuration including installation arguments
+ * Runs a platform-specific installer with the provided arguments.
+ * Handles different installer types (EXE, PKG, DMG, DEB) appropriately.
+ * @param installerPath - Path to the installer file
+ * @param args - Installation arguments from the browser config
+ * @param platform - Target platform
+ * @returns Promise that resolves when installation is complete
  */
 export async function runInstaller(
-  downloadedFile: string,
-  targetPath: string,
-  platform: string,
-  config: PlatformConfig,
+  installerPath: string,
+  args: InstallArgs,
+  platform: string
 ): Promise<void> {
   const replaceVars = (str: string, vars: Record<string, string>): string =>
-    Object.entries(vars).reduce((s, [k, v]) => s.replace(`{{${k}}}`, v), str)
+    str.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? key)
 
   const getArgs = (type: string, vars: Record<string, string>): string[] | undefined => {
     const [section, key] = type.split('.')
-    if (section === 'dmg' && key) {
-      const dmgArgs = config.installArgs?.dmg?.[key as keyof InstallArgs['dmg']] as string[] | undefined
+    if (section === 'dmg' && key && args.dmg) {
+      const dmgArgs = args.dmg[key as keyof InstallArgs['dmg']] as string[] | undefined
       return dmgArgs && Array.isArray(dmgArgs) 
         ? dmgArgs.map(arg => replaceVars(arg, vars))
         : undefined
     }
-    const args = config.installArgs?.[type as keyof Omit<InstallArgs, 'dmg'>] as string[] | undefined
-    return args && Array.isArray(args)
-      ? args.map(arg => replaceVars(arg, vars))
+    const installerArgs = args[type as keyof Omit<InstallArgs, 'dmg'>] as string[] | undefined
+    return installerArgs && Array.isArray(installerArgs)
+      ? installerArgs.map(arg => replaceVars(arg, vars))
       : undefined
   }
 
-  // Variables available for installer arguments:
+  // Variables available for template substitution:
   // - installPath: Final installation directory
   // - downloadedInstallerPath: Path to the downloaded installer file
-  // - mountPoint: (DMG only) Where the disk image is mounted
-  // - appPath: (DMG only) Path to the .app inside mounted disk image
   // - basePath: Base installation directory for the platform
   const vars = { 
-    installPath: targetPath,
-    downloadedInstallerPath: downloadedFile,
-    basePath: dirname(targetPath)
+    installPath: installerPath,
+    downloadedInstallerPath: installerPath,
+    basePath: dirname(installerPath)
   }
   
-  if (platform === 'windows' && downloadedFile.endsWith('.exe')) {
+  if (platform === 'windows' && installerPath.endsWith('.exe')) {
     await execCommand(
-      new Deno.Command(downloadedFile, {
-        args: getArgs('exe', vars) ?? ['/silent', `/installdir=${targetPath}`]
+      new Deno.Command(installerPath, {
+        args: getArgs('exe', vars) ?? ['/silent', `/installdir=${installerPath}`]
       }),
       'Installation failed'
     )
   } else if (platform === 'mac') {
-    if (downloadedFile.endsWith('.pkg')) {
+    if (installerPath.endsWith('.pkg')) {
       await execCommand(
         new Deno.Command('installer', {
-          args: getArgs('pkg', vars) ?? ['-pkg', downloadedFile, '-target', '/']
+          args: getArgs('pkg', vars) ?? ['-pkg', installerPath, '-target', '/']
         }),
         'Installation failed'
       )
-    } else if (downloadedFile.endsWith('.dmg')) {
-      await handleDmgInstall(downloadedFile, targetPath, getArgs)
+    } else if (installerPath.endsWith('.dmg')) {
+      await handleDmgInstall(installerPath, installerPath, getArgs)
     }
-  } else if (platform === 'linux' && downloadedFile.endsWith('.deb')) {
+  } else if (platform === 'linux' && installerPath.endsWith('.deb')) {
     await execCommand(
       new Deno.Command('sudo', {
-        args: getArgs('deb', vars) ?? ['dpkg', '-i', downloadedFile]
+        args: getArgs('deb', vars) ?? ['dpkg', '-i', installerPath]
       }),
       'Installation failed'
     )
   } else {
-    throw new Error(`Unsupported installer format for ${platform}: ${downloadedFile}`)
+    throw new Error(`Unsupported installer format for ${platform}: ${installerPath}`)
   }
 } 

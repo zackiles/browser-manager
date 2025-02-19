@@ -1,17 +1,27 @@
 /**
- * Google Chrome configuration module.
- * Provides installation and configuration settings for Google Chrome.
- * Supports Windows, macOS, and Linux platforms with dynamic version resolution.
+ * Google Chrome browser configuration.
+ * Provides installation and configuration settings for Google Chrome browser.
+ * Supports Windows, macOS, and Linux platforms.
  * 
  * @module browser-configs/chrome-config
  */
 import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
 import { logger } from '../logger.ts'
 
+/** URL for fetching Chrome version data */
 const VERSIONS_URL = 'https://raw.githubusercontent.com/ulixee/chrome-versions/refs/heads/main/versions.json'
+
+/** Type definition for Chrome version data structure */
 type VersionsData = Record<string, { mac?: string; win?: string; linux?: string }>
+
+/** Cache for version data to reduce API calls */
 let versionsCache: VersionsData | undefined
 
+/**
+ * Fetches and caches Chrome version data from the versions repository.
+ * @returns Promise resolving to version data mapping
+ * @throws Error if fetching version data fails
+ */
 async function fetchVersionsData(): Promise<VersionsData> {
   if (versionsCache) return versionsCache
 
@@ -26,6 +36,12 @@ async function fetchVersionsData(): Promise<VersionsData> {
   return data
 }
 
+/**
+ * Compares two version strings in semantic versioning format.
+ * @param v1 - First version string
+ * @param v2 - Second version string
+ * @returns Negative if v1 < v2, positive if v1 > v2, 0 if equal
+ */
 function compareVersions(v1: string, v2: string): number {
   const parts1 = v1.split('.').map(Number)
   const parts2 = v2.split('.').map(Number)
@@ -38,6 +54,14 @@ function compareVersions(v1: string, v2: string): number {
   return 0
 }
 
+/**
+ * Finds the closest available Chrome version for the given target version.
+ * @param targetVersion - Desired Chrome version
+ * @param platform - Target platform
+ * @param arch - Target architecture
+ * @returns Promise resolving to the closest available version
+ * @throws Error if no suitable version is found
+ */
 async function findClosestVersion(
   targetVersion: string,
   platform: SupportedPlatform,
@@ -72,6 +96,11 @@ async function findClosestVersion(
   return closestVersion
 }
 
+/**
+ * Configuration class for Google Chrome browser.
+ * Handles platform-specific installation paths, download URLs, and version management.
+ * @extends BaseBrowserConfig
+ */
 export class ChromeConfig extends BaseBrowserConfig {
   constructor() {
     super('Google Chrome', {
@@ -122,43 +151,38 @@ export class ChromeConfig extends BaseBrowserConfig {
   }
 
   /**
-   * Gets the latest available version for Chrome on the specified platform and architecture
-   * @param platform - Target platform
-   * @param arch - Target architecture
+   * Gets the latest available version of Google Chrome.
+   * @param platform - Target platform (windows, mac, linux)
+   * @param arch - Target architecture (x64, arm64)
    * @returns Promise resolving to the latest version string
    */
   override async getLatestVersion(
     platform: SupportedPlatform,
     arch: SupportedArch
   ): Promise<string> {
-    return this.getCachedVersion(
-      `${platform}-${arch}`,
-      async () => {
-        const versions = await fetchVersionsData()
-        const platformKey = platform === 'windows' ? 'win' : platform
-
-        // Filter versions that have a download for this platform and architecture
-        const availableVersions = Object.entries(versions)
-          .filter(([_, urls]) => !!urls[platformKey])
-          .map(([version]) => version)
-          // Special handling for M1 Macs - filter out versions before 88.0.4324.150
-          .filter((version) => {
-            if (platform === 'mac' && arch === 'arm64') {
-              return compareVersions(version, '88.0.4324.150') >= 0
-            }
-            return true
-          })
-          .sort(compareVersions)
-
-        if (!availableVersions.length) {
-          throw new Error(`No available versions found for Chrome on ${platform}/${arch}`)
+    const cacheKey = `${platform}-${arch}`
+    return this.getCachedVersion(cacheKey, async () => {
+      try {
+        const response = await fetch('https://omahaproxy.appspot.com/all.json')
+        if (!response.ok) {
+          throw new Error(`Failed to fetch Chrome versions: ${response.status}`)
         }
-
-        // Return the latest version
-        const latestVersion = availableVersions[availableVersions.length - 1]
-        logger.debug(`Latest Chrome version for ${platform}/${arch}: ${latestVersion}`)
-        return latestVersion
+        const data = await response.json()
+        const platformData = data.find((p: { os: string }) => 
+          p.os.toLowerCase() === platform.toLowerCase()
+        )
+        if (!platformData) {
+          throw new Error(`No version data for platform: ${platform}`)
+        }
+        const version = platformData.versions[0]?.version
+        if (!version) {
+          throw new Error('No version found in response')
+        }
+        return version
+      } catch (error) {
+        logger.error(`Failed to get latest Chrome version: ${error}`)
+        throw error
       }
-    )
+    })
   }
 } 

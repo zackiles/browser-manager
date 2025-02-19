@@ -1,5 +1,12 @@
+/**
+ * Build script for creating native binaries.
+ * Compiles the CLI for different platforms and architectures.
+ * 
+ * @module build
+ */
 import { ensureDir, emptyDir } from "@std/fs";
 import { join } from "@std/path";
+import { logger } from "../src/logger.ts";
 
 const TARGETS = [
   { target: "x86_64-apple-darwin", suffix: "macos-x86_64" },
@@ -16,7 +23,7 @@ async function build() {
   await ensureDir(binDir);
   await emptyDir(binDir);
 
-  console.log("🏗️  Building native binaries...\n");
+  logger.info("🏗️  Building native binaries...\n");
 
   let hasErrors = false;
   const successfulBuilds: string[] = [];
@@ -25,7 +32,7 @@ async function build() {
   for (const { target, suffix, optional } of TARGETS) {
     const outFile = join(binDir, `browser-manager-${suffix}`);
     
-    console.log(`📦 Building for ${target}...`);
+    logger.info(`📦 Building for ${target}...`);
     
     try {
       const command = new Deno.Command("deno", {
@@ -48,23 +55,23 @@ async function build() {
 
       if (!success) {
         if (optional) {
-          console.warn(`⚠️  Optional build for ${target} failed (exit code: ${code})`);
+          logger.warn(`⚠️  Optional build for ${target} failed (exit code: ${code})`);
           failedBuilds.push(target);
         } else {
-          console.error(`❌ Required build for ${target} failed (exit code: ${code})`);
+          logger.error(`❌ Required build for ${target} failed (exit code: ${code})`);
           hasErrors = true;
           failedBuilds.push(target);
         }
       } else {
-        console.log(`✅ Successfully built for ${target}\n`);
+        logger.info(`✅ Successfully built for ${target}\n`);
         successfulBuilds.push(target);
       }
     } catch (error) {
       if (optional) {
-        console.warn(`⚠️  Optional build for ${target} failed: ${error.message}`);
+        logger.warn(`⚠️  Optional build for ${target} failed: ${error.message}`);
         failedBuilds.push(target);
       } else {
-        console.error(`❌ Required build for ${target} failed: ${error.message}`);
+        logger.error(`❌ Required build for ${target} failed: ${error.message}`);
         hasErrors = true;
         failedBuilds.push(target);
       }
@@ -72,23 +79,23 @@ async function build() {
   }
 
   // Print summary
-  console.log("\n📊 Build Summary:");
+  logger.info("\n📊 Build Summary:");
   if (successfulBuilds.length > 0) {
-    console.log("✅ Successful builds:");
-    successfulBuilds.forEach(target => console.log(`   - ${target}`));
+    logger.info("✅ Successful builds:");
+    successfulBuilds.forEach(target => logger.info(`   - ${target}`));
   }
   if (failedBuilds.length > 0) {
-    console.log("❌ Failed builds:");
-    failedBuilds.forEach(target => console.log(`   - ${target}`));
+    logger.info("❌ Failed builds:");
+    failedBuilds.forEach(target => logger.info(`   - ${target}`));
   }
 
   // Exit with error if any required builds failed
   if (hasErrors) {
-    console.error("\n❌ Some required builds failed. See above for details.");
+    logger.error("\n❌ Some required builds failed. See above for details.");
     Deno.exit(1);
   }
 
-  console.log("\n🎉 All required builds completed successfully!");
+  logger.info("\n🎉 All required builds completed successfully!");
 }
 
 if (import.meta.main) {

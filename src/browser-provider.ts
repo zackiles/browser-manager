@@ -20,14 +20,21 @@ export type {
   SupportedArch,
 } from './browser-base-config.ts'
 
-// Export browser configurations
+/** Pre-configured Google Chrome browser instance */
 export const chrome: ChromeConfig = new ChromeConfig()
+/** Pre-configured Chromium browser instance */
 export const chromium: ChromiumConfig = new ChromiumConfig()
+/** Pre-configured Microsoft Edge browser instance */
 export const edge: EdgeConfig = new EdgeConfig()
+/** Pre-configured Brave browser instance */
 export const brave: BraveConfig = new BraveConfig()
+/** Pre-configured Arc browser instance */
 export const arc: ArcConfig = new ArcConfig()
 
-// Export browser map for backward compatibility
+/**
+ * Map of all supported browsers and their configurations.
+ * Use this for programmatic access to browser configurations.
+ */
 export const BROWSERS = {
   chrome,
   chromium,
@@ -36,5 +43,5 @@ export const BROWSERS = {
   arc,
 } as const
 
-// Export types based on the BROWSERS constant
+/** Type representing the names of all supported browsers */
 export type BrowserName = keyof typeof BROWSERS 

@@ -1,17 +1,25 @@
+/**
+ * Logger module providing consistent logging across the application.
+ * Supports different log levels and environment-specific behavior.
+ * 
+ * @module logger
+ */
+
 const isTestEnv =
   Deno.env.get('DENO_ENV') === 'test' || Deno.env.get('NODE_ENV') === 'test'
 
+/** Logger interface providing consistent logging methods */
 export const logger = {
   debug: (...args: unknown[]) => {
-    if (isTestEnv) console.debug(...args)
+    if (isTestEnv || Deno.env.get('DEBUG')) console.debug(...args)
   },
   info: (...args: unknown[]) => {
-    if (isTestEnv) console.info(...args)
+    console.info(...args)
   },
   warn: (...args: unknown[]) => {
-    if (isTestEnv) console.warn(...args)
+    console.warn(...args)
   },
   error: (...args: unknown[]) => {
-    if (isTestEnv) console.error(...args)
+    console.error(...args)
   },
 }

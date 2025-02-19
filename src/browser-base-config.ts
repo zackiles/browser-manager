@@ -11,14 +11,18 @@ import { ensureDir } from '@std/fs'
 import { logger } from './logger.ts'
 import { downloadWithProgress, extractZip, execCommand, runInstaller } from './installer.ts'
 
+/** Object containing key-value pairs for template variable substitution */
 export type TemplateVariables = Record<string, string>
 
-// Define the supported platforms and architectures based on what's used across all browser configs
+/** Supported operating system platforms */
 export type SupportedPlatform = 'windows' | 'mac' | 'linux'
+
+/** Supported CPU architectures */
 export type SupportedArch = 'x64' | 'arm64'
 
 /**
- * Installation arguments configuration for different installer types
+ * Installation arguments configuration for different installer types.
+ * Provides platform-specific installation command arguments.
  */
 export interface InstallArgs {
   /** Arguments for Windows .exe installers */
@@ -39,7 +43,8 @@ export interface InstallArgs {
 }
 
 /**
- * Platform-specific configuration for a browser
+ * Platform-specific configuration for a browser.
+ * Contains all necessary information to download, install and run a browser on a specific platform.
  */
 export interface PlatformConfig {
   /** Supported architectures for this platform */
@@ -74,17 +79,28 @@ export interface PlatformConfig {
   readonly installArgs?: InstallArgs
 }
 
+/**
+ * Parameters for browser installation and configuration.
+ * Used to specify the target platform, version, and installation paths.
+ */
 export interface BrowserParams {
+  /** Target platform for the browser */
   platform: string
+  /** Specific version to install (optional) */
   version?: string
+  /** Target architecture (optional) */
   arch?: string
+  /** Base installation path (optional) */
   basePath?: string
+  /** Full installation path (optional) */
   installPath?: string
+  /** Custom base path override (optional) */
   customBasePath?: string
 }
 
 /**
- * Information about a browser installation
+ * Information about a browser installation.
+ * Contains metadata about the installed browser instance.
  */
 export interface InstallationInfo {
   /** Name of the browser */
@@ -110,25 +126,48 @@ export interface InstallationInfo {
  * Provides common functionality for managing browser installations
  */
 export abstract class BaseBrowserConfig {
-  // Add version cache as a protected property
+  /** Cache for version responses to reduce API calls */
   protected versionCache: Map<string, { version: string; timestamp: number }> = new Map<string, { version: string; timestamp: number }>()
+  /** Time-to-live for cached version data in milliseconds */
   protected readonly CACHE_TTL = 1000 * 60 * 60 // 1 hour
 
+  /**
+   * Creates a new browser configuration.
+   * @param name - Name of the browser
+   * @param platforms - Platform-specific configuration map
+   */
   constructor(
     public readonly name: string,
     public readonly platforms: Record<string, PlatformConfig>,
   ) {}
 
+  /**
+   * Checks if a platform is supported by this browser.
+   * @param platform - Platform to check
+   * @returns True if the platform is supported
+   */
   isValidPlatform(platform: string): boolean {
     return this.normalizePlatform(platform) in this.platforms
   }
 
+  /**
+   * Checks if an architecture is supported for a given platform.
+   * @param platform - Target platform
+   * @param arch - Architecture to check
+   * @returns True if the architecture is supported
+   */
   isValidArch(platform: string, arch: string): boolean {
     const normalizedPlatform = this.normalizePlatform(platform)
     const config = this.platforms[normalizedPlatform]
     return config?.arch.includes(arch?.toLowerCase() as SupportedArch) ?? false
   }
 
+  /**
+   * Gets the download URL for the browser.
+   * @param params - Browser parameters including platform, version, and architecture
+   * @returns Promise resolving to the download URL
+   * @throws Error if the platform configuration is invalid or URL cannot be determined
+   */
   async getDownloadUrl({ platform, version, arch }: BrowserParams): Promise<string> {
     const normalizedPlatform = this.normalizePlatform(platform)
     const normalizedArch = arch?.toLowerCase() as SupportedArch
@@ -153,6 +192,11 @@ export abstract class BaseBrowserConfig {
     )
   }
 
+  /**
+   * Gets the installation path for the browser.
+   * @param params - Browser parameters including platform, base path, and version
+   * @returns Installation path string
+   */
   getInstallPath({ platform, basePath, version = '' }: BrowserParams): string {
     const config = this.validatePlatformConfig(this.normalizePlatform(platform))
     return this.replaceTemplate(config.installPathTemplate, {
@@ -161,6 +205,11 @@ export abstract class BaseBrowserConfig {
     })
   }
 
+  /**
+   * Gets the executable path for the browser.
+   * @param params - Browser parameters including platform and installation path
+   * @returns Executable path string
+   */
   getExecutable({ platform, installPath }: BrowserParams): string {
     const config = this.validatePlatformConfig(this.normalizePlatform(platform))
     return this.replaceTemplate(config.executableTemplate, {
@@ -168,6 +217,12 @@ export abstract class BaseBrowserConfig {
     })
   }
 
+  /**
+   * Normalizes platform strings to supported platform types.
+   * @param platform - Platform string to normalize
+   * @returns Normalized platform string
+   * @protected
+   */
   protected normalizePlatform(platform: string): SupportedPlatform {
     const normalized = platform.toLowerCase()
     return (
@@ -176,6 +231,14 @@ export abstract class BaseBrowserConfig {
     )
   }
 
+  /**
+   * Validates platform configuration and architecture.
+   * @param platform - Platform to validate
+   * @param arch - Optional architecture to validate
+   * @returns Validated platform configuration
+   * @throws Error if platform or architecture is not supported
+   * @protected
+   */
   protected validatePlatformConfig(
     platform: string,
     arch?: string,
@@ -245,7 +308,7 @@ export abstract class BaseBrowserConfig {
       logger.info(`Downloading ${this.name} from ${downloadUrl}...`)
       const downloadedFile = await Deno.makeTempFile({ dir: tempDir })
       logger.debug(`Created temporary file for download: ${downloadedFile}`)
-      await downloadWithProgress(downloadUrl, downloadedFile)
+      await downloadWithProgress(downloadUrl, downloadedFile, this.name)
       
       logger.debug(`Ensuring target directory exists: ${dirname(targetPath)}`)
       await ensureDir(dirname(targetPath))
@@ -275,7 +338,7 @@ export abstract class BaseBrowserConfig {
         case 'dmg':
         case 'deb':
           logger.debug(`Running platform installer for ${fileType} file`)
-          await runInstaller(downloadedFile, targetPath, platform, platformConfig)
+          await runInstaller(downloadedFile, platformConfig.installArgs ?? {}, platform)
           break
         default:
           throw new Error(`Unsupported file format: ${downloadUrl}`)
