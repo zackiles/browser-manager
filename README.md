@@ -2,6 +2,15 @@
 
 Simple, error-proof, cross-platform, silent, and version specific browser installer. Can be used as a depedency free CLI, or a Deno library. Currently supports Chrome, Chromium, Edge, Brave, and Arc browsers, and works on Linux, Mac, and Windows.
 
+## Features
+
+- 🌐 Cross-platform support (macOS, Linux, Windows)
+- 🏗️ Multiple architecture support (x86_64, arm64)
+- 🔄 Automatic version detection and installation
+- 🎯 Precise version targeting
+- 🔒 Secure downloads with checksum verification
+- 📦 Available as both a Deno/JSR library and CLI
+
 ## Quick Start
 
 ### As a CLI
@@ -216,15 +225,6 @@ try {
   console.error("Installation failed:", error.message)
 }
 ```
-
-## Features
-
-- 🌐 Cross-platform support (macOS, Linux, Windows)
-- 🏗️ Multiple architecture support (x86_64, arm64)
-- 🔄 Automatic version detection and installation
-- 🎯 Precise version targeting
-- 🔒 Secure downloads with checksum verification
-- 📦 Available as both a Deno/JSR library and CLI
 
 ## Supported Browsers
 
