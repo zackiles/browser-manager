@@ -17,7 +17,9 @@ import {
 } from "../src/mod.ts";
 import { getCurrentArch, getCurrentPlatform } from "../src/utils.ts";
 import { logger } from "../src/logger.ts";
-import { version as VERSION } from "../deno.json" with { type: "json" };
+
+// Read version from embedded deno.json file
+const VERSION = JSON.parse(Deno.readTextFileSync(new URL("../deno.json", import.meta.url))).version;
 
 // Constants
 const BROWSERS = {
