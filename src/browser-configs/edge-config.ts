@@ -6,7 +6,7 @@
  * @module browser-configs/edge-config
  */
 import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
-import { logger } from '../logger.ts'
+import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
 
 interface EdgeRelease {
   ProductVersion: string
@@ -65,48 +65,44 @@ export class EdgeConfig extends BaseBrowserConfig {
    * @returns Promise resolving to the latest version string
    */
   override async getLatestVersion(
-    platform: SupportedPlatform,
-    arch: SupportedArch
+    platform?: SupportedPlatform,
+    arch?: SupportedArch
   ): Promise<string> {
+    const currentPlatform = platform ?? getCurrentPlatform()
+    const currentArch = arch ?? getCurrentArch()
     return this.getCachedVersion(
-      `${platform}-${arch}`,
+      `${currentPlatform}-${currentArch}`,
       async () => {
-        const normalizedPlatform = this.normalizePlatform(platform)
-        const updateUrl = new URL('https://edgeupdates.microsoft.com/api/products')
-
-        // Map platform to Edge's platform names
-        const edgePlatform = normalizedPlatform === 'mac' 
-          ? 'MacOS' 
-          : normalizedPlatform === 'windows'
-            ? 'Windows'
-            : 'Linux'
-
-        updateUrl.searchParams.set('platform', edgePlatform)
-        updateUrl.searchParams.set('channel', 'Stable')
-
-        logger.debug(`Fetching latest Edge version for ${platform}/${arch}...`)
-        const response = await fetch(updateUrl, {
-          headers: {
-            'Accept': 'application/json',
-            'User-Agent': 'browser-manager'
-          }
-        })
-
+        const response = await fetch(
+          'https://edgeupdates.microsoft.com/api/products',
+        )
         if (!response.ok) {
-          throw new Error(`Failed to fetch Edge version: ${response.statusText}`)
+          throw new Error(`Failed to fetch Edge versions: ${response.statusText}`)
         }
 
-        const products = await response.json() as EdgeProduct[]
-        const stableProduct = products.find(p => p.Product === 'Stable')
-        if (!stableProduct || !stableProduct.Releases.length) {
-          throw new Error(`No stable Edge releases found for ${platform}/${arch}`)
+        const data = await response.json()
+        const stableChannel = data.find((p: { Product: string }) =>
+          p.Product === 'Stable',
+        )
+        if (!stableChannel) {
+          throw new Error('No stable channel found')
         }
 
-        // Get the latest release
-        const latestRelease = stableProduct.Releases[0]
-        logger.debug(`Latest Edge version for ${platform}/${arch}: ${latestRelease.ProductVersion}`)
-        return latestRelease.ProductVersion
-      }
+        const platformKey = currentPlatform === 'mac' ? 'MacOS' :
+          currentPlatform === 'windows' ? 'Windows' : 'Linux'
+        const release = stableChannel.Releases.find((r: EdgeRelease) =>
+          r.Artifacts.some((a) =>
+            a.ArtifactName.includes(platformKey) &&
+            (currentArch === 'arm64' ? a.ArtifactName.includes('arm64') : !a.ArtifactName.includes('arm64'))
+          ),
+        )
+
+        if (!release) {
+          throw new Error(`No release found for ${currentPlatform}/${currentArch}`)
+        }
+
+        return release.ProductVersion
+      },
     )
   }
 } 

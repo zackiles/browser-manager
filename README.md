@@ -54,11 +54,163 @@ version              # Display CLI version
 ```typescript
 import { chromium } from "jsr:@browser-tools/browser-manager"
 
-// Install latest version of Chromium
+// Install latest version of Chromium (platform and arch auto-detected)
+await chromium.install()
+
+// Or specify platform/arch manually if needed
 await chromium.install({
-  platform: "mac", // or "linux", "windows"
-  arch: "arm64",   // or "x86_64"
+  platform: "mac",    // Optional: "mac" | "linux" | "windows"
+  arch: "arm64",      // Optional: "arm64" | "x64"
 })
+```
+
+### Browser Methods
+
+Each browser instance (`chrome`, `chromium`, `edge`, `brave`, `arc`) exposes the following methods:
+
+#### install(params?)
+Install a specific version of the browser. Platform and architecture are automatically detected if not specified.
+
+```typescript
+import { chrome, type BrowserParams } from "jsr:@browser-tools/browser-manager"
+
+// Install latest version with auto-detected platform/arch
+await chrome.install()
+
+// Install with specific version
+await chrome.install({
+  version: "120.0.6099.109"
+})
+
+// Install with all options specified
+await chrome.install({
+  platform: "windows",  // Optional: auto-detected if not specified
+  arch: "x64",         // Optional: auto-detected if not specified
+  version: "120.0.6099.109",
+  customBasePath: "/custom/install/path"  // Optional
+})
+```
+
+**Important Notes:**
+
+1. **Arc Browser Limitations**: Arc browser only supports installing the latest version. The `version` parameter is ignored for Arc installations as the browser auto-updates to the latest version.
+
+2. **Installation Methods**: Browsers are installed differently depending on the type:
+   - Chromium: Direct archive extraction to the installation path
+   - Chrome, Edge, Brave: Require running platform-specific installers
+   - Installation method is handled automatically based on the browser type
+
+3. **Version Resolution**: If a specific version isn't found, the system will attempt to find and install the closest available version (rounding up). For example, requesting version "119.0.0" might install "119.0.2" if that's the closest available version.
+
+4. **Platform & Architecture**: By default, the system automatically detects your operating system and CPU architecture. You only need to specify these if you want to install for a different platform or architecture than your current system.
+
+#### remove(params?)
+Remove an installed browser. Platform and architecture are automatically detected if not specified.
+
+```typescript
+// Remove latest installation with auto-detected platform/arch
+await edge.remove()
+
+// Remove specific version
+await edge.remove({
+  version: "120.0.6099.109"
+})
+
+// Remove with all options specified
+await edge.remove({
+  platform: "linux",  // Optional: auto-detected if not specified
+  arch: "x64",       // Optional: auto-detected if not specified
+  version: "120.0.6099.109"
+})
+```
+
+#### getInstallationHistory(params?)
+Get history of all installations for a browser. Platform and architecture are automatically detected if not specified.
+
+```typescript
+// Get history for current platform/arch
+const history = await brave.getInstallationHistory()
+
+// Get history for specific platform/arch
+const history = await brave.getInstallationHistory({
+  platform: "mac",  // Optional: auto-detected if not specified
+  arch: "arm64"    // Optional: auto-detected if not specified
+})
+
+// Returns array of InstallationInfo:
+// [{
+//   browser: string,
+//   version: string,
+//   platform: string,
+//   arch: string,
+//   downloadUrl: string,
+//   isCustomPath: boolean,
+//   basePath: string,
+//   installDate: string
+// }]
+```
+
+#### getLatestVersion(platform?, arch?)
+Get the latest available version for a browser. Platform and architecture are automatically detected if not specified.
+
+```typescript
+// Get latest version for current platform/arch
+const version = await arc.getLatestVersion()
+
+// Get latest version for specific platform/arch
+const version = await arc.getLatestVersion("mac", "arm64")
+// Returns version string, e.g. "1.21.1"
+```
+
+### Types
+
+The library exports several TypeScript types for better type safety:
+
+```typescript
+type SupportedPlatform = "windows" | "mac" | "linux"
+type SupportedArch = "x64" | "arm64"
+
+interface BrowserParams {
+  platform: string
+  version?: string
+  arch?: string
+  basePath?: string
+  installPath?: string
+  customBasePath?: string
+}
+
+interface InstallationInfo {
+  browser: string
+  version?: string
+  platform: string
+  arch?: string
+  downloadUrl: string
+  isCustomPath: boolean
+  basePath: string
+  installDate: string
+}
+```
+
+### Error Handling
+
+All methods can throw errors for various reasons:
+- Invalid platform/architecture combinations
+- Network issues during downloads
+- Installation failures
+- Invalid versions
+- File system permission issues
+
+It's recommended to wrap calls in try/catch blocks:
+
+```typescript
+try {
+  await chromium.install({
+    platform: "mac",
+    arch: "arm64"
+  })
+} catch (error) {
+  console.error("Installation failed:", error.message)
+}
 ```
 
 ## Features

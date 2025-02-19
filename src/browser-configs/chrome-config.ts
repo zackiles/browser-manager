@@ -7,6 +7,7 @@
  */
 import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
 import { logger } from '../logger.ts'
+import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
 
 /** URL for fetching Chrome version data */
 const VERSIONS_URL = 'https://raw.githubusercontent.com/ulixee/chrome-versions/refs/heads/main/versions.json'
@@ -157,32 +158,36 @@ export class ChromeConfig extends BaseBrowserConfig {
    * @returns Promise resolving to the latest version string
    */
   override async getLatestVersion(
-    platform: SupportedPlatform,
-    arch: SupportedArch
+    platform?: SupportedPlatform,
+    arch?: SupportedArch
   ): Promise<string> {
-    const cacheKey = `${platform}-${arch}`
-    return this.getCachedVersion(cacheKey, async () => {
-      try {
-        const response = await fetch('https://omahaproxy.appspot.com/all.json')
-        if (!response.ok) {
-          throw new Error(`Failed to fetch Chrome versions: ${response.status}`)
+    const currentPlatform = platform ?? getCurrentPlatform()
+    const currentArch = arch ?? getCurrentArch()
+    return this.getCachedVersion(
+      `${currentPlatform}-${currentArch}`,
+      async () => {
+        const versions = await fetchVersionsData()
+        const platformKey = currentPlatform === 'windows' ? 'win' : currentPlatform
+
+        // Filter versions that have a download for this platform
+        const availableVersions = Object.entries(versions)
+          .filter(([_, urls]) => !!urls[platformKey])
+          .map(([version]) => version)
+          // Special handling for M1 Macs - filter out versions before 88.0.4324.150
+          .filter((version) => {
+            if (currentPlatform === 'mac' && currentArch === 'arm64') {
+              return compareVersions(version, '88.0.4324.150') >= 0
+            }
+            return true
+          })
+          .sort(compareVersions)
+
+        if (!availableVersions.length) {
+          throw new Error(`No available versions found for ${currentPlatform}/${currentArch}`)
         }
-        const data = await response.json()
-        const platformData = data.find((p: { os: string }) => 
-          p.os.toLowerCase() === platform.toLowerCase()
-        )
-        if (!platformData) {
-          throw new Error(`No version data for platform: ${platform}`)
-        }
-        const version = platformData.versions[0]?.version
-        if (!version) {
-          throw new Error('No version found in response')
-        }
-        return version
-      } catch (error) {
-        logger.error(`Failed to get latest Chrome version: ${error}`)
-        throw error
+
+        return availableVersions[availableVersions.length - 1]
       }
-    })
+    )
   }
 } 

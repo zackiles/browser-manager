@@ -7,6 +7,7 @@
  */
 import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
 import { logger } from '../logger.ts'
+import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
 
 export class ArcConfig extends BaseBrowserConfig {
   constructor() {
@@ -57,18 +58,20 @@ export class ArcConfig extends BaseBrowserConfig {
    * @throws Error if platform is not supported
    */
   override async getLatestVersion(
-    platform: SupportedPlatform,
-    arch: SupportedArch
+    platform?: SupportedPlatform,
+    arch?: SupportedArch
   ): Promise<string> {
+    const currentPlatform = platform ?? getCurrentPlatform()
+    const currentArch = arch ?? getCurrentArch()
     return this.getCachedVersion(
-      `${platform}-${arch}`,
+      `${currentPlatform}-${currentArch}`,
       async () => {
-        const normalizedPlatform = this.normalizePlatform(platform)
+        const normalizedPlatform = this.normalizePlatform(currentPlatform)
         if (!['mac', 'windows'].includes(normalizedPlatform)) {
           throw new Error('Arc Browser is only supported on macOS and Windows.')
         }
 
-        if (normalizedPlatform === 'windows' && arch !== 'x64') {
+        if (normalizedPlatform === 'windows' && currentArch !== 'x64') {
           throw new Error('Arc Browser on Windows only supports x64 architecture.')
         }
 

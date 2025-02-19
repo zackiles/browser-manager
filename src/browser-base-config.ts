@@ -10,6 +10,7 @@ import { dirname } from '@std/path'
 import { ensureDir } from '@std/fs'
 import { logger } from './logger.ts'
 import { downloadWithProgress, extractZip, execCommand, runInstaller } from './installer.ts'
+import { getCurrentPlatform, getCurrentArch } from './utils.ts'
 
 /** Object containing key-value pairs for template variable substitution */
 export type TemplateVariables = Record<string, string>
@@ -271,13 +272,16 @@ export abstract class BaseBrowserConfig {
    * @throws {Error} If installation fails. If using customBasePath, will attempt to clean up created directories on failure.
    */
   async install(params: BrowserParams): Promise<void> {
-    const { platform, arch, customBasePath } = params
+    // Auto-detect platform and arch if not provided
+    const platform = params.platform ?? getCurrentPlatform()
+    const arch = params.arch ?? getCurrentArch()
+    const { customBasePath } = params
     const tempDir = await Deno.makeTempDir()
     let basePath: string = ''
     
     try {
       logger.debug(`Resolving download URL for ${this.name} (platform: ${platform}, arch: ${arch})`)
-      const downloadUrl = await this.getDownloadUrl(params)
+      const downloadUrl = await this.getDownloadUrl({ ...params, platform, arch })
       
       const isCustomPath = !!customBasePath
       if (customBasePath) {
@@ -410,7 +414,9 @@ export abstract class BaseBrowserConfig {
    * @note If the installation used a custom base path, that directory will be removed only if empty after browser removal
    */
   async remove(params: BrowserParams): Promise<void> {
-    const { platform } = params
+    // Auto-detect platform and arch if not provided
+    const platform = params.platform ?? getCurrentPlatform()
+    const arch = params.arch ?? getCurrentArch()
     const PLATFORM_PATHS = {
       mac: '/Applications',
       windows: 'C:\\Program Files',
@@ -519,7 +525,9 @@ export abstract class BaseBrowserConfig {
    * @returns Array of installation records, sorted by date (most recent first)
    */
   async getInstallationHistory(params: BrowserParams): Promise<InstallationInfo[]> {
-    const { platform } = params
+    // Auto-detect platform and arch if not provided
+    const platform = params.platform ?? getCurrentPlatform()
+    const arch = params.arch ?? getCurrentArch()
     const PLATFORM_PATHS = {
       mac: '/Applications',
       windows: 'C:\\Program Files',
@@ -574,14 +582,15 @@ export abstract class BaseBrowserConfig {
 
   /**
    * Gets the latest available version for the specified platform and architecture.
+   * If platform and arch are not provided, they will be auto-detected.
    * @param platform - Target platform (windows, mac, linux)
    * @param arch - Target architecture (x64, arm64)
    * @returns Promise resolving to the latest version string
    * @throws Error if version discovery fails
    */
   abstract getLatestVersion(
-    platform: SupportedPlatform,
-    arch: SupportedArch
+    platform?: SupportedPlatform,
+    arch?: SupportedArch
   ): Promise<string>
 
   /**

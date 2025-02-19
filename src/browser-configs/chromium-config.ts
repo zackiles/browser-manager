@@ -7,6 +7,7 @@
  */
 import { logger } from '../logger.ts'
 import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
+import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
 
 /**
  * Maps platform and architecture to Chromium's platform identifier.
@@ -218,27 +219,37 @@ export class ChromiumConfig extends BaseBrowserConfig {
    * @param arch - Target architecture (x64, arm64)
    * @returns Promise resolving to the latest version string (position number)
    */
-  async getLatestVersion(
-    platform: SupportedPlatform,
-    arch: SupportedArch
+  override async getLatestVersion(
+    platform?: SupportedPlatform,
+    arch?: SupportedArch
   ): Promise<string> {
-    const cacheKey = `${platform}-${arch}`
-    return this.getCachedVersion(cacheKey, async () => {
-      try {
-        const platformKey = this.getPlatformKey(platform, arch)
+    const currentPlatform = platform ?? getCurrentPlatform()
+    const currentArch = arch ?? getCurrentArch()
+    return this.getCachedVersion(
+      `${currentPlatform}-${currentArch}`,
+      async () => {
+        const platformKey = this.getPlatformKey(currentPlatform, currentArch)
         const response = await fetch(
-          `https://storage.googleapis.com/chromium-browser-snapshots/${platformKey}/LAST_CHANGE`
+          `https://www.googleapis.com/storage/v1/b/chromium-browser-snapshots/o?delimiter=/&prefix=${platformKey}/&alt=json`,
         )
         if (!response.ok) {
-          throw new Error(`Failed to fetch Chromium version: ${response.status}`)
+          throw new Error(`Failed to fetch Chromium versions: ${response.statusText}`)
         }
-        const version = await response.text()
-        return version.trim()
-      } catch (error) {
-        logger.error(`Failed to get latest Chromium version: ${error}`)
-        throw error
-      }
-    })
+
+        const data = await response.json()
+        const versions = data.prefixes
+          ?.map((prefix: string) => prefix.split('/')[1])
+          .filter((v: string) => /^\d+$/.test(v))
+          .map(Number)
+          .sort((a: number, b: number) => b - a) ?? []
+
+        if (!versions.length) {
+          throw new Error(`No versions found for ${currentPlatform}/${currentArch}`)
+        }
+
+        return versions[0].toString()
+      },
+    )
   }
 
   /**

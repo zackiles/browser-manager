@@ -6,7 +6,7 @@
  * @module browser-configs/brave-config
  */
 import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
-import { logger } from '../logger.ts'
+import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
 
 export class BraveConfig extends BaseBrowserConfig {
   constructor() {
@@ -56,32 +56,34 @@ export class BraveConfig extends BaseBrowserConfig {
    * @returns Promise resolving to the latest version string
    */
   override async getLatestVersion(
-    platform: SupportedPlatform,
-    arch: SupportedArch
+    platform?: SupportedPlatform,
+    arch?: SupportedArch
   ): Promise<string> {
+    const currentPlatform = platform ?? getCurrentPlatform()
+    const currentArch = arch ?? getCurrentArch()
     return this.getCachedVersion(
-      `${platform}-${arch}`,
+      `${currentPlatform}-${currentArch}`,
       async () => {
-        logger.debug(`Fetching latest Brave version for ${platform}/${arch}...`)
         const response = await fetch(
           'https://api.github.com/repos/brave/brave-browser/releases/latest',
-          {
-            headers: {
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'browser-manager'
-            }
-          }
         )
-
         if (!response.ok) {
-          throw new Error(`Failed to fetch Brave version: ${response.statusText}`)
+          throw new Error(`Failed to fetch Brave versions: ${response.statusText}`)
         }
 
-        const data = await response.json() as { tag_name: string }
+        const data = await response.json()
         const version = data.tag_name.replace('v', '')
-        logger.debug(`Latest Brave version: ${version}`)
+        
+        // Validate platform and architecture support
+        if (!this.isValidPlatform(currentPlatform)) {
+          throw new Error(`Unsupported platform: ${currentPlatform}`)
+        }
+        if (!this.isValidArch(currentPlatform, currentArch)) {
+          throw new Error(`Unsupported architecture: ${currentArch} for platform ${currentPlatform}`)
+        }
+
         return version
-      }
+      },
     )
   }
 } 
