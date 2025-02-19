@@ -153,29 +153,32 @@ add_to_path_with_prompt() {
 
     if [ "$os" = "windows" ]; then
         if ! verify_path_in_env "$install_dir"; then
-            echo -e "${BOLD}The installation directory is not in your PATH.${NC}"
-            echo -n "Would you like to add it to your PATH? [Y/n] "
-            read -r response
-            response=${response:-Y}
-            if [[ "$response" =~ ^[Yy] ]]; then
-                if command -v setx >/dev/null 2>&1; then
-                    setx PATH "%PATH%;$install_dir" >/dev/null 2>&1
-                    print_success "Added $install_dir to PATH"
-                    echo "Please restart your terminal for the changes to take effect."
-                else
-                    print_error "Unable to modify PATH on Windows. Please add $install_dir to your PATH manually."
-                fi
+            if command -v setx >/dev/null 2>&1; then
+                setx PATH "%PATH%;$install_dir" >/dev/null 2>&1
+                print_success "Added $install_dir to PATH"
+                echo "Please restart your terminal for the changes to take effect."
+            else
+                echo -e "${BOLD}Warning: Unable to modify PATH on Windows. Please add $install_dir to your PATH manually.${NC}"
             fi
         fi
     else
         shell_config=$(get_shell_config_file)
         
         if ! verify_path_in_env "$install_dir"; then
-            echo -e "${BOLD}The installation directory is not in your PATH.${NC}"
-            echo -n "Would you like to add it to your PATH in $shell_config? [Y/n] "
-            read -r response
-            response=${response:-Y}
-            if [[ "$response" =~ ^[Yy] ]]; then
+            # Check if we're running in a pipe (non-interactive)
+            if [ -t 0 ]; then
+                # Interactive mode
+                echo -e "${BOLD}The installation directory is not in your PATH.${NC}"
+                echo -n "Would you like to add it to your PATH in $shell_config? [Y/n] "
+                read -r response
+                response=${response:-Y}
+                if [[ "$response" =~ ^[Yy] ]]; then
+                    echo "export PATH=\"$install_dir:\$PATH\"" >> "$shell_config"
+                    print_success "Added $install_dir to PATH in $shell_config"
+                    echo "Please run 'source $shell_config' or restart your terminal for the changes to take effect."
+                fi
+            else
+                # Non-interactive mode (e.g., curl | bash)
                 echo "export PATH=\"$install_dir:\$PATH\"" >> "$shell_config"
                 print_success "Added $install_dir to PATH in $shell_config"
                 echo "Please run 'source $shell_config' or restart your terminal for the changes to take effect."
@@ -190,12 +193,15 @@ verify_installation() {
     local os=$2
     local binary_name=$3
 
-    if ! verify_binary_accessible "$binary_name"; then
-        echo -e "${BOLD}Warning: $binary_name is not accessible from PATH${NC}"
-        add_to_path_with_prompt "$install_dir" "$os" "$binary_name"
-    else
-        print_success "$binary_name is properly installed and accessible from PATH"
+    # First check if binary is already accessible
+    if verify_binary_accessible "$binary_name"; then
+        print_success "$binary_name is already properly installed and accessible from PATH"
+        return
     fi
+
+    # Only proceed with PATH modification if binary isn't accessible
+    echo -e "${BOLD}Warning: $binary_name is not accessible from PATH${NC}"
+    add_to_path_with_prompt "$install_dir" "$os" "$binary_name"
 }
 
 main() {
