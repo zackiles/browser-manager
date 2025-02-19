@@ -1,0 +1,4 @@
+# Binary files in bin directory
+bin/browser-manager-* filter=lfs diff=lfs merge=lfs -text
+# Set default behavior for binary files
+*.exe filter=lfs diff=lfs merge=lfs -text 

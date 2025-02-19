@@ -19,7 +19,11 @@ wget -qO- https://raw.githubusercontent.com/zackiles/browser-manager/main/instal
 To remove the installed binary, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zackiles/browser-manager/main/install.sh | bash --remove
+# Using curl
+curl -fsSL https://raw.githubusercontent.com/zackiles/browser-manager/main/remove.sh | bash
+
+# Or using wget
+wget -qO- https://raw.githubusercontent.com/zackiles/browser-manager/main/remove.sh | bash
 ```
 
 Then use the CLI:

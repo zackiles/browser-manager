@@ -103,64 +103,102 @@ get_install_dir() {
     esac
 }
 
-# Add directory to PATH in the appropriate shell config file
-add_to_path() {
+# Verify if a path is in the PATH environment variable
+verify_path_in_env() {
+    local dir=$1
+    echo "$PATH" | tr ':' '\n' | grep -Fx "$dir" >/dev/null 2>&1
+}
+
+# Check if binary is accessible from PATH
+verify_binary_accessible() {
+    local binary_name=$1
+    command -v "$binary_name" >/dev/null 2>&1
+}
+
+# Get the appropriate shell config file
+get_shell_config_file() {
+    if [ -n "$SHELL" ]; then
+        case "$SHELL" in
+            */zsh) 
+                if [ -f "$HOME/.zshrc" ]; then
+                    echo "$HOME/.zshrc"
+                    return
+                fi
+                ;;
+            */bash)
+                if [ -f "$HOME/.bashrc" ]; then
+                    echo "$HOME/.bashrc"
+                    return
+                fi
+                ;;
+        esac
+    fi
+
+    # Fallback checks
+    if [ -f "$HOME/.zshrc" ]; then
+        echo "$HOME/.zshrc"
+    elif [ -f "$HOME/.bashrc" ]; then
+        echo "$HOME/.bashrc"
+    else
+        echo "$HOME/.profile"
+    fi
+}
+
+# Add directory to PATH with user confirmation
+add_to_path_with_prompt() {
     local install_dir=$1
     local os=$2
+    local binary_name=$3
     local shell_config
 
-    case "$os" in
-        "macos"|"linux")
-            if [ -f "$HOME/.zshrc" ]; then
-                shell_config="$HOME/.zshrc"
-            elif [ -f "$HOME/.bashrc" ]; then
-                shell_config="$HOME/.bashrc"
-            else
-                shell_config="$HOME/.profile"
+    if [ "$os" = "windows" ]; then
+        if ! verify_path_in_env "$install_dir"; then
+            echo -e "${BOLD}The installation directory is not in your PATH.${NC}"
+            echo -n "Would you like to add it to your PATH? [Y/n] "
+            read -r response
+            response=${response:-Y}
+            if [[ "$response" =~ ^[Yy] ]]; then
+                if command -v setx >/dev/null 2>&1; then
+                    setx PATH "%PATH%;$install_dir" >/dev/null 2>&1
+                    print_success "Added $install_dir to PATH"
+                    echo "Please restart your terminal for the changes to take effect."
+                else
+                    print_error "Unable to modify PATH on Windows. Please add $install_dir to your PATH manually."
+                fi
             fi
-            ;;
-        "windows")
-            # On Windows, we'll modify the user PATH environment variable
-            if command -v setx >/dev/null 2>&1; then
-                setx PATH "%PATH%;$install_dir" >/dev/null 2>&1
-                return
-            else
-                print_error "Unable to modify PATH on Windows"
+        fi
+    else
+        shell_config=$(get_shell_config_file)
+        
+        if ! verify_path_in_env "$install_dir"; then
+            echo -e "${BOLD}The installation directory is not in your PATH.${NC}"
+            echo -n "Would you like to add it to your PATH in $shell_config? [Y/n] "
+            read -r response
+            response=${response:-Y}
+            if [[ "$response" =~ ^[Yy] ]]; then
+                echo "export PATH=\"$install_dir:\$PATH\"" >> "$shell_config"
+                print_success "Added $install_dir to PATH in $shell_config"
+                echo "Please run 'source $shell_config' or restart your terminal for the changes to take effect."
             fi
-            ;;
-    esac
-
-    if [ "$os" != "windows" ]; then
-        if ! grep -q "export PATH=\"$install_dir:\$PATH\"" "$shell_config" 2>/dev/null; then
-            echo "export PATH=\"$install_dir:\$PATH\"" >> "$shell_config"
-            print_success "Added $install_dir to PATH in $shell_config"
         fi
     fi
 }
 
-remove_installation() {
-    print_step "Removing browser-manager..."
-    local os arch
-    read -r os arch < <(detect_platform)
-    local install_dir=$(get_install_dir "$os")
-    local binary_name=$(get_binary_name "$os" "$arch")
+# Verify installation and PATH setup
+verify_installation() {
+    local install_dir=$1
+    local os=$2
+    local binary_name=$3
 
-    rm -f "$install_dir/$binary_name"
-    print_success "Removed $binary_name from $install_dir"
-
-    if [ "$os" = "windows" ]; then
-        rm -f "$install_dir/browser-manager"
+    if ! verify_binary_accessible "$binary_name"; then
+        echo -e "${BOLD}Warning: $binary_name is not accessible from PATH${NC}"
+        add_to_path_with_prompt "$install_dir" "$os" "$binary_name"
+    else
+        print_success "$binary_name is properly installed and accessible from PATH"
     fi
-
-    print_success "browser-manager has been removed successfully!"
 }
 
 main() {
-    if [ "$1" = "--remove" ]; then
-        remove_installation
-        exit 0
-    fi
-
     print_step "Detecting platform..."
     read -r os arch < <(detect_platform)
     print_success "Detected $os ($arch)"
@@ -189,15 +227,19 @@ main() {
     mv "$install_dir/$download_binary_name" "$install_dir/$installed_binary_name"
     print_success "Set executable permissions and renamed binary"
 
-    print_step "Updating PATH..."
-    add_to_path "$install_dir" "$os"
-    print_success "Updated PATH"
+    print_step "Verifying installation..."
+    verify_installation "$install_dir" "$os" "$installed_binary_name"
 
     echo
     print_success "browser-manager has been installed successfully!"
     echo
     echo -e "${BOLD}To start using browser-manager:${NC}"
-    echo "1. Restart your terminal or run: source ~/.bashrc (or your shell's config file)"
+    if [ "$os" != "windows" ]; then
+        shell_config=$(get_shell_config_file)
+        echo "1. Run: source $shell_config"
+    else
+        echo "1. Restart your terminal"
+    fi
     echo "2. Run: browser-manager --help"
     echo
     echo -e "${BOLD}Installation Details:${NC}"
