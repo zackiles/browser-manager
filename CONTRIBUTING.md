@@ -7,7 +7,10 @@ Thank you for your interest in contributing to Browser Manager! This document pr
 1. Fork the repository
 2. Create a new branch for your feature/fix
 3. Make your changes
-4. Run tests: `deno test` (note, there are none at the moment)
+4. Run tests: `deno task test`
+   - Tests are written using Deno's built-in test runner
+   - Tests are located in the `test/` directory
+   - The test task includes all necessary permissions via `--allow-all`
 5. Submit a Pull Request
 
 ## Code Style

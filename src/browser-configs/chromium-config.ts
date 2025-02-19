@@ -1,7 +1,8 @@
 /**
  * Chromium browser configuration.
  * Provides installation and configuration settings for Chromium browser.
- * Supports Windows, macOS, and Linux platforms.
+ * Supports Windows, macOS, and Linux platforms with version-specific downloads.
+ * Uses the Chromium Continuous Build API for version and download management.
  * 
  * @module browser-configs/chromium-config
  */
@@ -9,11 +10,20 @@ import { logger } from '../logger.ts'
 import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
 import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
 
+/** Chromium release information from API */
+interface ChromiumRelease {
+  /** Version string (e.g., '120.0.6099.109') */
+  version: string
+  /** Chromium main branch position */
+  chromium_main_branch_position: number
+}
+
 /**
  * Maps platform and architecture to Chromium's platform identifier.
  * @param platform - Target platform
  * @param arch - Target architecture
  * @returns Platform identifier used in Chromium's API
+ * @private
  */
 function getChromiumPlatform(
   platform: SupportedPlatform,
@@ -28,6 +38,7 @@ function getChromiumPlatform(
  * @param v1 - First version string
  * @param v2 - Second version string
  * @returns Negative if v1 < v2, positive if v1 > v2, 0 if equal
+ * @private
  */
 function compareVersions(v1: string, v2: string): number {
   const parts1 = v1.split('.').map(Number)
@@ -47,7 +58,8 @@ function compareVersions(v1: string, v2: string): number {
  * @param platform - Target platform
  * @param arch - Target architecture
  * @returns Promise resolving to the build number
- * @throws Error if build number cannot be found
+ * @throws {Error} If build number cannot be found or API request fails
+ * @private
  */
 async function fetchChromiumBuildNumber(
   version: string,
@@ -113,8 +125,9 @@ async function fetchChromiumBuildNumber(
    * Helper function to fetch a page of releases.
    * @param offset - Offset for pagination
    * @returns Promise resolving to array of release data
+   * @private
    */
-  async function fetchReleases(offset: number) {
+  async function fetchReleases(offset: number): Promise<ChromiumRelease[]> {
     const url = new URL(baseUrl)
     url.searchParams.set('channel', 'Stable')
     url.searchParams.set('platform', chromiumPlatform)
@@ -124,11 +137,9 @@ async function fetchChromiumBuildNumber(
     logger.debug(`Searching page: ${url.href}`)
     const response = await fetch(url)
     if (!response.ok)
-      throw new Error(`Failed to fetch releases from ${url.href}`)
+      throw new Error(`Failed to fetch releases: ${response.status} ${response.statusText}`)
 
-    return response.json() as Promise<
-      { version: string; chromium_main_branch_position: number }[]
-    >
+    return response.json()
   }
 }
 
@@ -138,6 +149,7 @@ async function fetchChromiumBuildNumber(
  * @param arch - Target architecture
  * @param buildNumber - Build number to get URL for
  * @returns The download URL for the specified build
+ * @private
  */
 function getDownloadUrl(platform: SupportedPlatform, arch: SupportedArch, buildNumber: string): string {
   const chromiumPlatform = getChromiumPlatform(platform, arch)
@@ -150,7 +162,8 @@ function getDownloadUrl(platform: SupportedPlatform, arch: SupportedArch, buildN
  * @param arch - Target architecture
  * @param buildNumber - Initial build number to search around
  * @returns Promise resolving to the nearest available build number
- * @throws Error if no valid build is found within the search range
+ * @throws {Error} If no valid build is found within the search range
+ * @private
  */
 async function findNearestAvailableBuild(
   platform: SupportedPlatform,
@@ -194,13 +207,16 @@ async function findNearestAvailableBuild(
  * @extends BaseBrowserConfig
  */
 export class ChromiumConfig extends BaseBrowserConfig {
+  /** Base URL for Chromium version API */
+  private static readonly VERSION_API_URL = 'https://chromiumdash.appspot.com/fetch_releases'
+
   constructor() {
     super('chromium', {
       windows: {
         arch: ['x64'],
-        downloadUrlResolver: async (version: string) => {
-          const buildNumber = await fetchChromiumBuildNumber(version, 'windows', 'x64')
-          return getDownloadUrl('windows', 'x64', buildNumber)
+        downloadUrlResolver: async (version: string, arch: SupportedArch) => {
+          const buildNumber = await fetchChromiumBuildNumber(version, 'windows', arch)
+          return getDownloadUrl('windows', arch, buildNumber)
         },
         installPathTemplate: '{{basePath}}\\Chromium\\Application',
         executableTemplate: '{{installPath}}\\chrome.exe'
@@ -216,9 +232,9 @@ export class ChromiumConfig extends BaseBrowserConfig {
       },
       linux: {
         arch: ['x64'],
-        downloadUrlResolver: async (version: string) => {
-          const buildNumber = await fetchChromiumBuildNumber(version, 'linux', 'x64')
-          return getDownloadUrl('linux', 'x64', buildNumber)
+        downloadUrlResolver: async (version: string, arch: SupportedArch) => {
+          const buildNumber = await fetchChromiumBuildNumber(version, 'linux', arch)
+          return getDownloadUrl('linux', arch, buildNumber)
         },
         installPathTemplate: '/usr/local/chromium',
         executableTemplate: '{{installPath}}/chrome'
@@ -232,54 +248,38 @@ export class ChromiumConfig extends BaseBrowserConfig {
    * @param platform - Target platform (windows, mac, linux)
    * @param arch - Target architecture (x64, arm64)
    * @returns Promise resolving to the latest version string
+   * @throws {Error} If the API request fails or no compatible version is found
    */
   override async getLatestVersion(
-    platform?: SupportedPlatform,
-    arch?: SupportedArch
+    platform: SupportedPlatform = getCurrentPlatform(),
+    arch: SupportedArch = getCurrentArch()
   ): Promise<string> {
-    const currentPlatform = platform ?? getCurrentPlatform()
-    const currentArch = arch ?? getCurrentArch()
-    
     return this.getCachedVersion(
-      `${currentPlatform}-${currentArch}`,
+      `${platform}-${arch}`,
       async () => {
-        const chromiumPlatform = getChromiumPlatform(currentPlatform, currentArch)
-        const url = 'https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=' + chromiumPlatform + '&num=1'
-        
-        logger.debug(`Fetching latest Chromium version from: ${url}`)
-        const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error(`Failed to fetch latest Chromium version: ${response.statusText}`)
-        }
+        try {
+          const chromiumPlatform = getChromiumPlatform(platform, arch)
+          const url = `${ChromiumConfig.VERSION_API_URL}?channel=Stable&platform=${chromiumPlatform}&num=1`
+          
+          logger.debug(`Fetching latest Chromium version from: ${url}`)
+          const response = await fetch(url)
+          if (!response.ok) {
+            throw new Error(`Failed to fetch latest Chromium version: ${response.status} ${response.statusText}`)
+          }
 
-        const data = await response.json()
-        if (!data.length) {
-          throw new Error(`No versions found for ${currentPlatform}/${currentArch}`)
-        }
+          const data = await response.json() as ChromiumRelease[]
+          if (!data.length) {
+            throw new Error(`No versions found for ${platform}/${arch}`)
+          }
 
-        logger.debug(`Latest Chromium version: ${data[0].version}`)
-        return data[0].version
+          logger.debug(`Latest Chromium version: ${data[0].version}`)
+          return data[0].version
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          logger.error(`Error fetching Chromium version: ${errorMessage}`)
+          throw error
+        }
       }
     )
-  }
-
-  /**
-   * Gets the platform key used in Chromium's download URLs.
-   * @param platform - Target platform
-   * @param arch - Target architecture
-   * @returns Platform key string used in Chromium's storage URLs
-   * @private
-   */
-  private getPlatformKey(platform: SupportedPlatform, arch: SupportedArch): string {
-    switch (platform) {
-      case 'windows':
-        return 'Win_x64'
-      case 'mac':
-        return arch === 'arm64' ? 'Mac_Arm' : 'Mac'
-      case 'linux':
-        return 'Linux_x64'
-      default:
-        throw new Error(`Unsupported platform: ${platform}`)
-    }
   }
 } 

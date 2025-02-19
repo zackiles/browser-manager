@@ -1,7 +1,8 @@
 /**
  * Brave Browser configuration module.
  * Provides installation and configuration settings for Brave Browser.
- * Supports Windows, macOS, and Linux platforms.
+ * Supports Windows, macOS, and Linux platforms with version-specific downloads.
+ * Downloads are fetched from GitHub releases.
  * 
  * @module browser-configs/brave-config
  */
@@ -9,7 +10,34 @@ import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '.
 import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
 import { logger } from '../logger.ts'
 
+/** GitHub API response for a release */
+interface GitHubRelease {
+  /** Release tag name (e.g., 'v1.2.3') */
+  tag_name: string
+  /** Release name */
+  name: string
+  /** Release description */
+  body: string
+  /** Whether this is a draft release */
+  draft: boolean
+  /** Whether this is a prerelease */
+  prerelease: boolean
+  /** Release creation timestamp */
+  created_at: string
+  /** Release publication timestamp */
+  published_at: string
+}
+
+/**
+ * Configuration class for Brave Browser.
+ * Handles platform-specific installation paths, download URLs, and version management.
+ * Uses GitHub releases API to find and download specific Brave versions.
+ * @extends BaseBrowserConfig
+ */
 export class BraveConfig extends BaseBrowserConfig {
+  /** GitHub API endpoint for Brave releases */
+  private static readonly GITHUB_API_URL = 'https://api.github.com/repos/brave/brave-browser/releases/latest'
+
   constructor() {
     super('Brave', {
       windows: {
@@ -56,27 +84,35 @@ export class BraveConfig extends BaseBrowserConfig {
    * @param platform - Target platform (windows, mac, linux)
    * @param arch - Target architecture (x64, arm64)
    * @returns Promise resolving to the latest version string
+   * @throws {Error} If the API request fails or no compatible release is found
    */
   override async getLatestVersion(
-    platform?: SupportedPlatform,
-    arch?: SupportedArch
+    platform: SupportedPlatform = getCurrentPlatform(),
+    arch: SupportedArch = getCurrentArch()
   ): Promise<string> {
-    const currentPlatform = platform ?? getCurrentPlatform()
-    const currentArch = arch ?? getCurrentArch()
-    
     return this.getCachedVersion(
-      `${currentPlatform}-${currentArch}`,
+      `${platform}-${arch}`,
       async () => {
-        const response = await fetch('https://api.github.com/repos/brave/brave-browser/releases/latest')
-        if (!response.ok) {
-          throw new Error(`Failed to fetch latest Brave version: ${response.statusText}`)
-        }
+        try {
+          const response = await fetch(BraveConfig.GITHUB_API_URL)
+          if (!response.ok) {
+            throw new Error(`Failed to fetch latest Brave version: ${response.status} ${response.statusText}`)
+          }
 
-        const data = await response.json()
-        // Remove 'v' prefix from tag name
-        const version = data.tag_name.replace(/^v/, '')
-        logger.debug(`Latest Brave version: ${version}`)
-        return version
+          const data = await response.json() as GitHubRelease
+          if (data.draft || data.prerelease) {
+            throw new Error('Latest release is a draft or prerelease')
+          }
+
+          // Remove 'v' prefix from tag name
+          const version = data.tag_name.replace(/^v/, '')
+          logger.debug(`Latest Brave version: ${version}`)
+          return version
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          logger.error(`Error fetching Brave version: ${errorMessage}`)
+          throw error
+        }
       }
     )
   }

@@ -1,10 +1,11 @@
 {
   "name": "@browser-tools/browser-manager",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "exports": "./src/mod.ts",
   "tasks": {
     "dev": "deno run --watch --allow-sys --allow-env --allow-net --allow-write --allow-read ./scripts/test-cli.ts",
-    "build": "deno run --allow-sys --allow-env --allow-net --allow-write --allow-read --allow-run ./scripts/build.ts"
+    "build": "deno run --allow-sys --allow-env --allow-net --allow-write --allow-read --allow-run ./scripts/build.ts",
+    "test": "deno test --allow-all test/"
   },
   "permissions": {
     "sys": true,
@@ -13,7 +14,7 @@
     "write": true,
     "read": true
   },
-  "exclude": ["bin", "scripts", "test", ".cursor", ".git"],
+  "exclude": ["bin", "scripts", ".cursor", ".git"],
   "license": "MIT",
   "imports": {
     "@deno-library/progress": "jsr:@deno-library/progress@1",

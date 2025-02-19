@@ -5,11 +5,19 @@
  * 
  * @module browser-configs/arc-config
  */
-import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
+import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch, type BrowserParams } from '../browser-base-config.ts'
 import { logger } from '../logger.ts'
 import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
 
+/**
+ * Configuration class for Arc Browser.
+ * Handles platform-specific installation paths, download URLs, and version management.
+ * @extends BaseBrowserConfig
+ */
 export class ArcConfig extends BaseBrowserConfig {
+  /** Supported platforms for Arc Browser */
+  private static readonly SUPPORTED_PLATFORMS = ['mac', 'windows'] as const
+
   constructor() {
     super('Arc Browser', {
       mac: {
@@ -37,37 +45,49 @@ export class ArcConfig extends BaseBrowserConfig {
     })
   }
 
-  override async getDownloadUrl({ platform, version }: { platform: string; version?: string }): Promise<string> {
-    if (version) {
-      throw new Error('Arc Browser only supports downloading the latest version. Do not specify a version parameter.')
-    }
-
-    const normalizedPlatform = this.normalizePlatform(platform)
-    if (!['mac', 'windows'].includes(normalizedPlatform)) {
-      throw new Error('Arc Browser is only supported on macOS and Windows.')
-    }
-
-    return super.getDownloadUrl({ platform })
-  }
-
   /**
    * Gets the latest available version of Arc Browser.
-   * Arc Browser only provides the latest version and doesn't expose version numbers.
-   * @param platform - Target platform (windows, mac)
-   * @param arch - Target architecture (x64, arm64)
-   * @returns Promise resolving to "latest" as Arc only provides latest version
-   * @throws Error if platform is not supported
+   * Arc Browser only supports 'latest' as a version.
+   * @param platform - Target platform (mac, windows)
+   * @param _arch - Target architecture (unused as Arc auto-detects)
+   * @returns Promise resolving to 'latest' as version string
+   * @throws {Error} If platform is not supported
    */
   override async getLatestVersion(
-    platform?: SupportedPlatform,
-    _arch?: SupportedArch
+    platform: SupportedPlatform = getCurrentPlatform(),
+    _arch: SupportedArch = getCurrentArch()
   ): Promise<string> {
-    const currentPlatform = platform ?? getCurrentPlatform()
-    
-    if (!['mac', 'windows'].includes(currentPlatform)) {
+    if (!ArcConfig.SUPPORTED_PLATFORMS.includes(platform as typeof ArcConfig.SUPPORTED_PLATFORMS[number])) {
       throw new Error('Arc Browser is only supported on macOS and Windows.')
     }
 
     return Promise.resolve('latest')
+  }
+
+  /**
+   * Gets the download URL for Arc Browser.
+   * Arc Browser only supports downloading the latest version.
+   * @param params - Browser parameters including platform
+   * @returns Promise resolving to the download URL
+   * @throws {Error} If version is specified or platform is not supported
+   */
+  override async getDownloadUrl(params: BrowserParams): Promise<string> {
+    if (params.version) {
+      throw new Error('Arc Browser only supports downloading the latest version. Do not specify a version parameter.')
+    }
+
+    try {
+      const { platform } = await this.getNormalizedParams(params)
+      
+      if (!ArcConfig.SUPPORTED_PLATFORMS.includes(platform as typeof ArcConfig.SUPPORTED_PLATFORMS[number])) {
+        throw new Error('Arc Browser is only supported on macOS and Windows.')
+      }
+
+      return super.getDownloadUrl({ platform })
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      logger.error(`Error getting Arc Browser download URL: ${errorMessage}`)
+      throw error
+    }
   }
 } 

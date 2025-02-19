@@ -169,7 +169,7 @@ export abstract class BaseBrowserConfig {
    * @returns Promise resolving to the download URL
    * @throws Error if the platform configuration is invalid or URL cannot be determined
    */
-  async getDownloadUrl({ platform = getCurrentPlatform(), version, arch }: BrowserParams): Promise<string> {
+  async getDownloadUrl({ platform = getCurrentPlatform(), version, arch = getCurrentArch() }: BrowserParams): Promise<string> {
     const normalizedPlatform = this.normalizePlatform(platform)
     const normalizedArch = arch?.toLowerCase() as SupportedArch
 
@@ -177,20 +177,48 @@ export abstract class BaseBrowserConfig {
       normalizedPlatform,
       normalizedArch,
     )
-    if (config.downloadUrlResolver && version && normalizedArch) {
-      return config.downloadUrlResolver(version, normalizedArch)
+
+    // If we have a downloadUrlResolver, use it
+    if (config.downloadUrlResolver) {
+      // If version is not provided, get the latest
+      const resolvedVersion = version ?? await this.getLatestVersion(normalizedPlatform, normalizedArch)
+      return config.downloadUrlResolver(resolvedVersion, normalizedArch)
     }
+
+    // Fall back to template if no resolver
     if (!config.downloadUrlTemplate) {
       throw new Error(
         `No download configuration for ${this.name} on ${normalizedPlatform}`,
       )
     }
+
+    // If version is not provided, get the latest
+    const resolvedVersion = version ?? await this.getLatestVersion(normalizedPlatform, normalizedArch)
     return Promise.resolve(
       this.replaceTemplate(config.downloadUrlTemplate, {
-        version: version ?? '',
-        arch: normalizedArch ?? '',
+        version: resolvedVersion,
+        arch: normalizedArch,
       }),
     )
+  }
+
+  /**
+   * Helper method to get normalized parameters with defaults.
+   * Use this in browser-specific configurations to ensure consistent parameter handling.
+   * @param params - Browser parameters that may be partially defined
+   * @returns Normalized parameters with defaults applied
+   * @protected
+   */
+  protected async getNormalizedParams(params: BrowserParams): Promise<Required<Pick<BrowserParams, 'platform' | 'arch' | 'version'>>> {
+    const platform = this.normalizePlatform(params.platform ?? getCurrentPlatform())
+    const arch = (params.arch ?? getCurrentArch()).toLowerCase() as SupportedArch
+    const version = params.version ?? await this.getLatestVersion(platform, arch)
+
+    return {
+      platform,
+      arch,
+      version
+    }
   }
 
   /**

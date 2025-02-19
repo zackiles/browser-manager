@@ -1,7 +1,7 @@
 /**
  * Google Chrome browser configuration.
  * Provides installation and configuration settings for Google Chrome browser.
- * Supports Windows, macOS, and Linux platforms.
+ * Supports Windows, macOS, and Linux platforms with version-specific downloads.
  * 
  * @module browser-configs/chrome-config
  */
@@ -13,7 +13,17 @@ import { getCurrentPlatform, getCurrentArch } from '../utils.ts'
 const VERSIONS_URL = 'https://raw.githubusercontent.com/ulixee/chrome-versions/refs/heads/main/versions.json'
 
 /** Type definition for Chrome version data structure */
-type VersionsData = Record<string, { mac?: string; win?: string; linux?: string }>
+interface VersionsData {
+  /** Version number mapped to platform-specific download URLs */
+  [version: string]: {
+    /** macOS download URL */
+    mac?: string
+    /** Windows download URL */
+    win?: string
+    /** Linux download URL */
+    linux?: string
+  }
+}
 
 /** Cache for version data to reduce API calls */
 let versionsCache: VersionsData | undefined
@@ -21,7 +31,7 @@ let versionsCache: VersionsData | undefined
 /**
  * Fetches and caches Chrome version data from the versions repository.
  * @returns Promise resolving to version data mapping
- * @throws Error if fetching version data fails
+ * @throws {Error} If fetching version data fails
  */
 async function fetchVersionsData(): Promise<VersionsData> {
   if (versionsCache) return versionsCache
@@ -29,7 +39,7 @@ async function fetchVersionsData(): Promise<VersionsData> {
   logger.debug('Fetching Chrome versions data...')
   const response = await fetch(VERSIONS_URL)
   if (!response.ok) {
-    throw new Error(`Failed to fetch Chrome versions data: ${response.statusText}`)
+    throw new Error(`Failed to fetch Chrome versions data: ${response.status} ${response.statusText}`)
   }
 
   const data = await response.json() as VersionsData
@@ -61,7 +71,7 @@ function compareVersions(v1: string, v2: string): number {
  * @param platform - Target platform
  * @param arch - Target architecture
  * @returns Promise resolving to the closest available version
- * @throws Error if no suitable version is found
+ * @throws {Error} If no suitable version is found
  */
 async function findClosestVersion(
   targetVersion: string,
@@ -100,9 +110,13 @@ async function findClosestVersion(
 /**
  * Configuration class for Google Chrome browser.
  * Handles platform-specific installation paths, download URLs, and version management.
+ * Uses a version repository to find and download specific Chrome versions.
  * @extends BaseBrowserConfig
  */
 export class ChromeConfig extends BaseBrowserConfig {
+  /** Minimum version that supports arm64 on macOS */
+  private static readonly MIN_MAC_ARM64_VERSION = '88.0.4324.150'
+
   constructor() {
     super('Google Chrome', {
       windows: {
@@ -153,25 +167,36 @@ export class ChromeConfig extends BaseBrowserConfig {
 
   /**
    * Gets the latest available version of Google Chrome.
-   * Fetches from Chrome's version API.
+   * Fetches from Chrome's version repository.
    * @param platform - Target platform (windows, mac, linux)
    * @param arch - Target architecture (x64, arm64)
    * @returns Promise resolving to the latest version string
+   * @throws {Error} If version data cannot be fetched or no compatible version is found
    */
   override async getLatestVersion(
-    platform?: SupportedPlatform,
-    arch?: SupportedArch
+    platform: SupportedPlatform = getCurrentPlatform(),
+    arch: SupportedArch = getCurrentArch()
   ): Promise<string> {
-    const currentPlatform = platform ?? getCurrentPlatform()
-    const currentArch = arch ?? getCurrentArch()
-    
     return this.getCachedVersion(
-      `${currentPlatform}-${currentArch}`,
+      `${platform}-${arch}`,
       async () => {
-        const versions = await fetchVersionsData()
-        const latestVersion = Object.keys(versions)[0]
-        logger.debug(`Latest Chrome version: ${latestVersion}`)
-        return latestVersion
+        try {
+          const versions = await fetchVersionsData()
+          const latestVersion = Object.keys(versions)[0]
+          
+          // Validate version compatibility
+          if (platform === 'mac' && arch === 'arm64' && 
+              compareVersions(latestVersion, ChromeConfig.MIN_MAC_ARM64_VERSION) < 0) {
+            throw new Error(`Chrome version ${latestVersion} does not support arm64 on macOS`)
+          }
+          
+          logger.debug(`Latest Chrome version: ${latestVersion}`)
+          return latestVersion
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : String(error)
+          logger.error(`Error fetching Chrome version: ${errorMessage}`)
+          throw error
+        }
       }
     )
   }
