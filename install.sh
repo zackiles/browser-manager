@@ -9,7 +9,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # Base URL for binary downloads
-BASE_URL="https://github.com/zackiles/browser-manager/blob/main/bin"
+BASE_URL="https://raw.githubusercontent.com/zackiles/browser-manager/main/bin"
 
 print_step() {
     echo -e "${BLUE}==>${NC} ${BOLD}$1${NC}"
