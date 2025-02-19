@@ -110,6 +110,10 @@ export interface InstallationInfo {
  * Provides common functionality for managing browser installations
  */
 export abstract class BaseBrowserConfig {
+  // Add version cache as a protected property
+  protected versionCache = new Map<string, { version: string; timestamp: number }>()
+  protected readonly CACHE_TTL = 1000 * 60 * 60 // 1 hour
+
   constructor(
     public readonly name: string,
     public readonly platforms: Record<string, PlatformConfig>,
@@ -357,13 +361,17 @@ export abstract class BaseBrowserConfig {
       // Read installation info to determine if this was a custom path installation
       let isCustomPath = false
       let customBasePath = ''
+      let installations: InstallationInfo[] = []
+      let infoPath = ''
       try {
-        const infoPath = `${targetPath}/.installation-info`
+        infoPath = `${targetPath}/.installation-info`
         logger.debug(`Reading installation info from: ${infoPath}`)
-        const installations = JSON.parse(await Deno.readTextFile(infoPath))
+        const infoContent = await Deno.readTextFile(infoPath)
+        const parsedInfo = JSON.parse(infoContent)
         // Handle both old and new formats
-        if (Array.isArray(installations)) {
+        if (Array.isArray(parsedInfo)) {
           logger.debug('Found array-format installation info')
+          installations = parsedInfo
           // Find the most recent installation of this browser
           const installation = installations
             .filter(i => i.browser === this.name)
@@ -376,9 +384,10 @@ export abstract class BaseBrowserConfig {
           }
         } else {
           logger.debug('Found legacy-format installation info')
-          // Legacy format
-          isCustomPath = installations.isCustomPath
-          customBasePath = installations.basePath
+          // Legacy format - convert to array format
+          isCustomPath = parsedInfo.isCustomPath
+          customBasePath = parsedInfo.basePath
+          installations = [parsedInfo as InstallationInfo]
         }
       } catch (_) {
         logger.debug('No installation info found, assuming default installation')
@@ -388,6 +397,34 @@ export abstract class BaseBrowserConfig {
       logger.debug(`Removing browser directory: ${targetPath}`)
       await Deno.remove(targetPath, { recursive: true })
       logger.info(`Successfully removed ${this.name} from ${targetPath}`)
+
+      // Update installation info file if it exists
+      if (installations.length > 0 && infoPath) {
+        try {
+          // Remove the matching installation entry
+          const updatedInstallations = installations.filter(installation => {
+            // Keep entries that don't match this browser and version
+            return installation.browser !== this.name || 
+                   (params.version && installation.version !== params.version)
+          })
+
+          if (updatedInstallations.length > 0) {
+            // Write the updated installations back to the file
+            logger.debug(`Updating installation info with ${updatedInstallations.length} remaining entries`)
+            await Deno.writeTextFile(infoPath, JSON.stringify(updatedInstallations, null, 2))
+          } else {
+            // If no installations left, remove the file
+            logger.debug('No installations remaining, removing .installation-info file')
+            try {
+              await Deno.remove(infoPath)
+            } catch (_) {
+              // Ignore error if file is already gone
+            }
+          }
+        } catch (error) {
+          logger.warn(`Failed to update installation info: ${error}`)
+        }
+      }
 
       // If this was a custom base path installation, try to clean up the base directory
       if (isCustomPath && customBasePath) {
@@ -470,5 +507,46 @@ export abstract class BaseBrowserConfig {
   async getLatestInstallation(params: BrowserParams): Promise<InstallationInfo | null> {
     const history = await this.getInstallationHistory(params)
     return history[0] ?? null
+  }
+
+  /**
+   * Gets the latest available version for the specified platform and architecture.
+   * @param platform - Target platform (windows, mac, linux)
+   * @param arch - Target architecture (x64, arm64)
+   * @returns Promise resolving to the latest version string
+   * @throws Error if version discovery fails
+   */
+  abstract getLatestVersion(
+    platform: SupportedPlatform,
+    arch: SupportedArch
+  ): Promise<string>
+
+  /**
+   * Helper method to cache version responses
+   * @param cacheKey - Unique key for caching the version
+   * @param fetcher - Async function that fetches the version
+   * @returns Promise resolving to the version string
+   */
+  protected async getCachedVersion(
+    cacheKey: string,
+    fetcher: () => Promise<string>
+  ): Promise<string> {
+    const now = Date.now()
+    const cached = this.versionCache.get(cacheKey)
+    
+    if (cached && now - cached.timestamp < this.CACHE_TTL) {
+      logger.debug(`Using cached version for ${this.name}: ${cached.version}`)
+      return cached.version
+    }
+
+    try {
+      const version = await fetcher()
+      this.versionCache.set(cacheKey, { version, timestamp: now })
+      logger.debug(`Cached new version for ${this.name}: ${version}`)
+      return version
+    } catch (error) {
+      logger.error(`Failed to fetch version for ${this.name}: ${error}`)
+      throw error
+    }
   }
 } 

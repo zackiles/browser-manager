@@ -5,7 +5,8 @@
  * 
  * @module browser-configs/brave-config
  */
-import { BaseBrowserConfig } from '../browser-base-config.ts'
+import { BaseBrowserConfig, type SupportedPlatform, type SupportedArch } from '../browser-base-config.ts'
+import { logger } from '../logger.ts'
 
 export class BraveConfig extends BaseBrowserConfig {
   constructor() {
@@ -46,5 +47,41 @@ export class BraveConfig extends BaseBrowserConfig {
         }
       },
     })
+  }
+
+  /**
+   * Gets the latest available version for Brave on the specified platform and architecture
+   * @param platform - Target platform
+   * @param arch - Target architecture
+   * @returns Promise resolving to the latest version string
+   */
+  override async getLatestVersion(
+    platform: SupportedPlatform,
+    arch: SupportedArch
+  ): Promise<string> {
+    return this.getCachedVersion(
+      `${platform}-${arch}`,
+      async () => {
+        logger.debug(`Fetching latest Brave version for ${platform}/${arch}...`)
+        const response = await fetch(
+          'https://api.github.com/repos/brave/brave-browser/releases/latest',
+          {
+            headers: {
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'browser-manager'
+            }
+          }
+        )
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch Brave version: ${response.statusText}`)
+        }
+
+        const data = await response.json() as { tag_name: string }
+        const version = data.tag_name.replace('v', '')
+        logger.debug(`Latest Brave version: ${version}`)
+        return version
+      }
+    )
   }
 } 

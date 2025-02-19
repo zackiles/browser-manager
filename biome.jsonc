@@ -7,9 +7,9 @@
     "ignore": [
       "deno.json",
       "deno.lock",
+      ".cursor",
       "CHANGELOG.md",
-      "dist",
-      "**/node_modules"
+      "bin"
     ]
   },
   "formatter": {

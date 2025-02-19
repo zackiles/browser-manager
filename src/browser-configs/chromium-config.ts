@@ -179,4 +179,41 @@ export class ChromiumConfig extends BaseBrowserConfig {
       },
     })
   }
+
+  /**
+   * Gets the latest available version for Chromium on the specified platform and architecture
+   * @param platform - Target platform
+   * @param arch - Target architecture
+   * @returns Promise resolving to the latest version string
+   */
+  override async getLatestVersion(
+    platform: SupportedPlatform,
+    arch: SupportedArch
+  ): Promise<string> {
+    return this.getCachedVersion(
+      `${platform}-${arch}`,
+      async () => {
+        const chromiumPlatform = getChromiumPlatform(platform, arch)
+        const url = new URL('https://chromiumdash.appspot.com/fetch_releases')
+        url.searchParams.set('channel', 'Stable')
+        url.searchParams.set('platform', chromiumPlatform)
+        url.searchParams.set('num', '1')
+
+        logger.debug(`Fetching latest Chromium version for ${platform}/${arch}...`)
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch Chromium version: ${response.statusText}`)
+        }
+
+        const releases = await response.json() as { version: string }[]
+        if (!releases.length) {
+          throw new Error(`No releases found for Chromium on ${platform}/${arch}`)
+        }
+
+        const latestVersion = releases[0].version
+        logger.debug(`Latest Chromium version for ${platform}/${arch}: ${latestVersion}`)
+        return latestVersion
+      }
+    )
+  }
 } 

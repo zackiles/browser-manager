@@ -1,16 +1,25 @@
 {
   "name": "@browser-tools/browser-manager",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "exports": "./src/mod.ts",
   "tasks": {
-    "dev": "deno run --watch --allow-sys --allow-env --allow-net --allow-write --allow-read ./src/main.ts"
+    "dev": "deno run --watch --allow-sys --allow-env --allow-net --allow-write --allow-read ./scripts/main.ts",
+    "build": "deno run --allow-sys --allow-env --allow-net --allow-write --allow-read --allow-run ./scripts/build.ts"
   },
+  "permissions": {
+    "sys": true,
+    "env": true,
+    "net": true,
+    "write": true,
+    "read": true
+  },
+  "exclude": ["bin", "scripts", "test", ".cursor", ".git"],
   "license": "MIT",
   "imports": {
     "@deno-library/progress": "jsr:@deno-library/progress@1",
     "@std/assert": "jsr:@std/assert@1",
     "@std/async": "jsr:@std/async@1",
-    "@std/cli": "jsr:@std/cli@1",
+    "@std/cli": "jsr:@std/cli@^1.0.13",
     "@std/dotenv": "jsr:@std/dotenv@^0.225.3",
     "@std/fs": "jsr:@std/fs@1",
     "@std/http": "jsr:@std/http@1",

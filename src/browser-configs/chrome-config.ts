@@ -120,4 +120,45 @@ export class ChromeConfig extends BaseBrowserConfig {
       },
     })
   }
+
+  /**
+   * Gets the latest available version for Chrome on the specified platform and architecture
+   * @param platform - Target platform
+   * @param arch - Target architecture
+   * @returns Promise resolving to the latest version string
+   */
+  override async getLatestVersion(
+    platform: SupportedPlatform,
+    arch: SupportedArch
+  ): Promise<string> {
+    return this.getCachedVersion(
+      `${platform}-${arch}`,
+      async () => {
+        const versions = await fetchVersionsData()
+        const platformKey = platform === 'windows' ? 'win' : platform
+
+        // Filter versions that have a download for this platform and architecture
+        const availableVersions = Object.entries(versions)
+          .filter(([_, urls]) => !!urls[platformKey])
+          .map(([version]) => version)
+          // Special handling for M1 Macs - filter out versions before 88.0.4324.150
+          .filter((version) => {
+            if (platform === 'mac' && arch === 'arm64') {
+              return compareVersions(version, '88.0.4324.150') >= 0
+            }
+            return true
+          })
+          .sort(compareVersions)
+
+        if (!availableVersions.length) {
+          throw new Error(`No available versions found for Chrome on ${platform}/${arch}`)
+        }
+
+        // Return the latest version
+        const latestVersion = availableVersions[availableVersions.length - 1]
+        logger.debug(`Latest Chrome version for ${platform}/${arch}: ${latestVersion}`)
+        return latestVersion
+      }
+    )
+  }
 } 

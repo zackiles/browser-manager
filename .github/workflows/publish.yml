@@ -1,0 +1,27 @@
+name: Publish to JSR
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  publish:
+    # Only run if the tag was pushed to main branch
+    if: github.event_name == 'push' && github.ref_type == 'tag' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Publish to JSR
+        run: npx jsr publish 

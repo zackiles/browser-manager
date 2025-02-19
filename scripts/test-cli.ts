@@ -1,20 +1,14 @@
 import '@std/dotenv'
-/**
- * Usage Example:
- * 
-  const browser = BROWSERS['chromium']
-  const downloadUrl = await browser.getDownloadUrl('mac', '120.0.6099.109', 'arm64')
-  const installPath = browser.getInstallPath('mac', '/Applications')
-  const executable = browser.getExecutable('mac', installPath)
-  console.log({ downloadUrl, installPath, executable })
- */
-import { chromium } from './browser-provider.ts'
-import { getCurrentArch, getCurrentPlatform } from './utils.ts'
+
+import { chromium } from '../src/browser-provider.ts'
+import { getCurrentArch, getCurrentPlatform } from '../src/utils.ts'
 import { testBrowsers } from '../test/test-browsers.ts'
+import type { SupportedPlatform, SupportedArch } from '../src/browser-base-config.ts'
 
 const browserInstall = await chromium.install(testBrowsers.chromium)
-console.log(browserInstall)
 
+const currentVersion = await chromium.getLatestVersion(getCurrentPlatform() as SupportedPlatform, getCurrentArch() as SupportedArch)
+console.log(currentVersion)
 /** 
 // Loop through test browsers and get download URLs
 for (const [browserName, browserConfig] of Object.entries(testBrowsers)) {

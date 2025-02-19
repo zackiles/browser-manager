@@ -1,7 +1,7 @@
 {
   "deno.enable": true,
   "deno.lint": true,
-  "deno.enablePaths": ["src", "test"],
+  "deno.enablePaths": ["src", "test", "scripts"],
   "deno.importMap": "./deno.jsonc",
   "editor.formatOnSave": true
 }

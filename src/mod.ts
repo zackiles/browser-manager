@@ -12,5 +12,3 @@ export type {
   BaseBrowserConfig as BrowserConfig,
   BrowserParams,
 } from './browser-base-config.ts'
-
-export { install, remove } from './installer.ts'
