@@ -111,7 +111,7 @@ export interface InstallationInfo {
  */
 export abstract class BaseBrowserConfig {
   // Add version cache as a protected property
-  protected versionCache = new Map<string, { version: string; timestamp: number }>()
+  protected versionCache: Map<string, { version: string; timestamp: number }> = new Map<string, { version: string; timestamp: number }>()
   protected readonly CACHE_TTL = 1000 * 60 * 60 // 1 hour
 
   constructor(

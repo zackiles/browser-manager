@@ -21,11 +21,11 @@ export type {
 } from './browser-base-config.ts'
 
 // Export browser configurations
-export const chrome = new ChromeConfig()
-export const chromium = new ChromiumConfig()
-export const edge = new EdgeConfig()
-export const brave = new BraveConfig()
-export const arc = new ArcConfig()
+export const chrome: ChromeConfig = new ChromeConfig()
+export const chromium: ChromiumConfig = new ChromiumConfig()
+export const edge: EdgeConfig = new EdgeConfig()
+export const brave: BraveConfig = new BraveConfig()
+export const arc: ArcConfig = new ArcConfig()
 
 // Export browser map for backward compatibility
 export const BROWSERS = {

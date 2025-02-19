@@ -1,8 +1,10 @@
+import { SupportedPlatform, SupportedArch } from './browser-base-config.ts'
+
 /**
  * Maps Deno.build.os to supported platform strings used in browser configurations
  * @returns 'windows' | 'mac' | 'linux'
  */
-export function getCurrentPlatform(): string {
+export function getCurrentPlatform(): SupportedPlatform {
   const platform = Deno.build.os
   switch (platform) {
     case 'darwin':
@@ -20,7 +22,7 @@ export function getCurrentPlatform(): string {
  * Maps Deno.build.arch to supported architecture strings used in browser configurations
  * @returns 'x64' | 'arm64'
  */
-export function getCurrentArch(): string {
+export function getCurrentArch(): SupportedArch {
   const arch = Deno.build.arch
   switch (arch) {
     case 'x86_64':

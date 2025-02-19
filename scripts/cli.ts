@@ -17,7 +17,7 @@ import {
 } from "../src/mod.ts";
 import { getCurrentArch, getCurrentPlatform } from "../src/utils.ts";
 import { logger } from "../src/logger.ts";
-import { version as VERSION } from "../deno.jsonc" assert { type: "json" };
+import { version as VERSION } from "../deno.json" with { type: "json" };
 
 // Constants
 const BROWSERS = {
@@ -233,7 +233,11 @@ const main = async () => {
       }
     }
   } catch (error) {
-    logger.error(`Error: ${error.message}`);
+    if (error instanceof Error) {
+      logger.error(`Error: ${error.message}`);
+    } else {
+      logger.error(`An unknown error occurred: ${String(error)}`);
+    }
     Deno.exit(1);
   }
 };
