@@ -226,10 +226,25 @@ export abstract class BaseBrowserConfig {
    */
   protected normalizePlatform(platform: string): SupportedPlatform {
     const normalized = platform.toLowerCase()
-    return (
-      ({ macos: 'mac', darwin: 'mac', win: 'windows' } as const)[normalized] ??
-      (normalized as SupportedPlatform)
-    )
+    const platformMap = {
+      macos: 'mac',
+      darwin: 'mac',
+      win: 'windows',
+      windows: 'windows',
+      win32: 'windows',
+      win64: 'windows',
+      linux: 'linux',
+      ubuntu: 'linux',
+      debian: 'linux'
+    } as const
+    const normalizedPlatform = (platformMap[normalized as keyof typeof platformMap] ?? normalized) as SupportedPlatform
+    
+    // Validate that the normalized platform is one of the supported platforms
+    if (!['windows', 'mac', 'linux'].includes(normalizedPlatform)) {
+      throw new Error(`Unsupported platform: ${platform}. Must be one of: windows, mac, linux`)
+    }
+    
+    return normalizedPlatform
   }
 
   /**
@@ -244,7 +259,8 @@ export abstract class BaseBrowserConfig {
     platform: string,
     arch?: string,
   ): PlatformConfig {
-    const config = this.platforms[platform]
+    const normalizedPlatform = this.normalizePlatform(platform)
+    const config = this.platforms[normalizedPlatform]
     if (!config) throw new Error(`Unsupported platform for ${this.name}`)
     if (arch && !config.arch.map((a) => a.toLowerCase()).includes(arch)) {
       throw new Error(`Unsupported architecture ${arch} for ${this.name}`)
