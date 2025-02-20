@@ -1,6 +1,6 @@
 {
   "name": "@browser-tools/browser-manager",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "exports": "./src/mod.ts",
   "tasks": {
     "dev": "deno run --watch --allow-sys --allow-env --allow-net --allow-write --allow-read ./scripts/test-cli.ts",

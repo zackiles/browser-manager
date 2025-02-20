@@ -2,14 +2,16 @@
  * Logger module providing consistent logging across the application.
  * Supports different log levels and environment-specific behavior.
  * Debug output is only shown when BROWSER_MANAGER_DEBUG=1 is set.
- * 
+ *
  * @module logger
  */
 
 import ProgressBar from '@deno-library/progress'
 
 const isDebugMode = Deno.env.get('BROWSER_MANAGER_DEBUG') === '1'
-const isTestEnv = Deno.env.get('DENO_ENV') === 'test' || Deno.env.get('NODE_ENV') === 'test'
+console.log(isDebugMode)
+const isTestEnv =
+  Deno.env.get('DENO_ENV') === 'test' || Deno.env.get('NODE_ENV') === 'test'
 const shouldShowProgress = isDebugMode || isTestEnv
 
 /** Logger interface providing consistent logging methods */
@@ -35,8 +37,8 @@ export const logger = {
     title,
     total,
   }: {
-    title: string;
-    total: number;
+    title: string
+    total: number
   }): ProgressBar | undefined => {
     if (!shouldShowProgress) return undefined
 
@@ -63,5 +65,5 @@ export const logger = {
     if (progress) {
       progress.end()
     }
-  }
+  },
 }

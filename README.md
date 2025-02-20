@@ -104,8 +104,8 @@ await chrome.install({
 await chrome.install({
   platform: "windows",  // Optional: auto-detected if not specified
   arch: "x64",         // Optional: auto-detected if not specified
-  version: "120.0.6099.109",
-  customBasePath: "/custom/install/path"  // Optional
+  version: "120.0.6099.109", // Optional: latest version if not specified
+  customBasePath: "/custom/install/path"  // Optional: local temporary directory if not specified
 })
 ```
 
@@ -206,28 +206,6 @@ interface InstallationInfo {
   isCustomPath: boolean
   basePath: string
   installDate: string
-}
-```
-
-### Error Handling
-
-All methods can throw errors for various reasons:
-- Invalid platform/architecture combinations
-- Network issues during downloads
-- Installation failures
-- Invalid versions
-- File system permission issues
-
-It's recommended to wrap calls in try/catch blocks:
-
-```typescript
-try {
-  await chromium.install({
-    platform: "mac",
-    arch: "arm64"
-  })
-} catch (error) {
-  console.error("Installation failed:", error.message)
 }
 ```
 

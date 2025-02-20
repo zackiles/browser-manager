@@ -1,13 +1,19 @@
-import '@std/dotenv'
+import '@std/dotenv/load'
 
 import { chromium } from '../src/browser-provider.ts'
 import { getCurrentArch, getCurrentPlatform } from '../src/utils.ts'
-import { testBrowsers } from '../test/test-browsers.ts'
-import type { SupportedPlatform, SupportedArch } from '../src/browser-base-config.ts'
+import { testBrowsers } from '../test/mock-configs.ts'
+import type {
+  SupportedPlatform,
+  SupportedArch,
+} from '../src/browser-base-config.ts'
 
 const browserInstall = await chromium.install(testBrowsers.chromium)
 
-const currentVersion = await chromium.getLatestVersion(getCurrentPlatform() as SupportedPlatform, getCurrentArch() as SupportedArch)
+const currentVersion = await chromium.getLatestVersion(
+  getCurrentPlatform() as SupportedPlatform,
+  getCurrentArch() as SupportedArch,
+)
 console.log(currentVersion)
 /** 
 // Loop through test browsers and get download URLs

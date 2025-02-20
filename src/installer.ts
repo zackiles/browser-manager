@@ -10,7 +10,7 @@ import type { InstallArgs } from './browser-base-config.ts'
  * - ZIP archives
  * - TAR archives
  * - Native installers (EXE, PKG, DMG, DEB)
- * 
+ *
  * @module installer
  */
 
@@ -38,19 +38,41 @@ const EXECUTABLES = ['.exe', 'chrome', 'brave', 'msedge', 'chromium'] as const
 export async function downloadWithProgress(
   url: string,
   destinationPath: string,
-  browser: string
+  browser: string,
 ): Promise<void> {
   const response = await fetch(url)
-  if (!response.ok) throw new Error(`Failed to download: HTTP ${response.status}`)
-  
+  if (!response.ok)
+    throw new Error(`Failed to download: HTTP ${response.status}`)
+
   const contentLength = Number(response.headers.get('content-length'))
   const progress = logger.createProgressBar({
     title: 'Downloading...',
     total: contentLength,
   })
 
+  let file: Deno.FsFile | undefined
   try {
-    const file = await Deno.open(destinationPath, { write: true, create: true })
+    // Windows may have issues with file locking
+    // Retry a few times if the file is locked
+    let retries = 3
+    while (retries > 0) {
+      try {
+        file = await Deno.open(destinationPath, { write: true, create: true })
+        break
+      } catch (error) {
+        if (error instanceof Deno.errors.PermissionDenied && retries > 1) {
+          retries--
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+          continue
+        }
+        throw error
+      }
+    }
+
+    if (!file) {
+      throw new Error(`Failed to open file for writing: ${destinationPath}`)
+    }
+
     const reader = response.body?.getReader()
     if (!reader) throw new Error('Failed to read response body')
 
@@ -62,8 +84,8 @@ export async function downloadWithProgress(
       downloaded += value.length
       logger.updateProgress(progress, downloaded)
     }
-    file.close()
   } finally {
+    file?.close()
     logger.endProgress(progress)
   }
 }
@@ -76,7 +98,7 @@ export async function downloadWithProgress(
  */
 export async function extractZip(
   zipPath: string,
-  destinationPath: string
+  destinationPath: string,
 ): Promise<void> {
   const file = await Deno.readFile(zipPath)
   const zipReader = new ZipReader(new BlobReader(new Blob([file])))
@@ -88,39 +110,82 @@ export async function extractZip(
   })
 
   try {
-    await Promise.all(entries.map(async (entry, index) => {
-      const path = normalize(`${destinationPath}/${entry.filename}`)
-      if (!path.startsWith(destinationPath)) {
-        throw new Error(`Invalid path in ZIP: ${entry.filename}`)
-      }
-
-      if (entry.directory) {
-        await Deno.mkdir(path, { recursive: true })
-        return
-      }
-
-      await Deno.mkdir(dirname(path), { recursive: true })
-
-      if (entry.getData) {
-        const chunks: Uint8Array[] = []
-        await entry.getData(new WritableStream({
-          write: chunk => { chunks.push(chunk); return Promise.resolve() }
-        }))
-
-        const data = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0))
-        let offset = 0
-        for (const chunk of chunks) {
-          data.set(chunk, offset)
-          offset += chunk.length
+    await Promise.all(
+      entries.map(async (entry, index) => {
+        // Windows paths in ZIP files might use forward slashes
+        // Normalize to use proper path separators for the platform
+        if (Deno.build.os === 'windows') {
+          // Check for invalid Windows characters in the raw filename
+          if (/[<>:"|?*]/.test(entry.filename)) {
+            // Skip files with invalid Windows characters instead of failing
+            logger.warn(
+              `Skipping file with invalid Windows characters: ${entry.filename}`,
+            )
+            return
+          }
         }
-        await Deno.writeFile(path, data)
 
-        if (EXECUTABLES.some(ext => path.endsWith(ext))) {
-          await Deno.chmod(path, 0o755)
+        const entryPath = entry.filename
+          .split('/')
+          .join(Deno.build.os === 'windows' ? '\\' : '/')
+        let finalPath = normalize(`${destinationPath}/${entryPath}`)
+
+        // Additional Windows path validation
+        if (Deno.build.os === 'windows') {
+          if (finalPath.length > 260 && !finalPath.startsWith('\\\\?\\')) {
+            finalPath = `\\\\?\\${finalPath}`
+          }
         }
-      }
-      logger.updateProgress(progress, index + 1)
-    }))
+
+        if (!finalPath.startsWith(destinationPath)) {
+          throw new Error(`Invalid path in ZIP: ${entry.filename}`)
+        }
+
+        if (entry.directory) {
+          await Deno.mkdir(finalPath, { recursive: true })
+          return
+        }
+
+        await Deno.mkdir(dirname(finalPath), { recursive: true })
+
+        if (entry.getData) {
+          const chunks: Uint8Array[] = []
+          await entry.getData(
+            new WritableStream({
+              write: (chunk) => {
+                chunks.push(chunk)
+                return Promise.resolve()
+              },
+            }),
+          )
+
+          const data = new Uint8Array(
+            chunks.reduce((acc, chunk) => acc + chunk.length, 0),
+          )
+          let offset = 0
+          for (const chunk of chunks) {
+            data.set(chunk, offset)
+            offset += chunk.length
+          }
+          await Deno.writeFile(finalPath, data)
+
+          // Only attempt to set executable permissions on non-Windows platforms
+          if (
+            Deno.build.os !== 'windows' &&
+            EXECUTABLES.some((ext) => finalPath.endsWith(ext))
+          ) {
+            try {
+              await Deno.chmod(finalPath, 0o755)
+            } catch (error) {
+              logger.warn(
+                `Failed to set executable permissions on ${finalPath}: ${error}`,
+              )
+            }
+          }
+        }
+        logger.updateProgress(progress, index + 1)
+      }),
+    )
   } finally {
     logger.endProgress(progress)
     await zipReader.close()
@@ -135,7 +200,7 @@ export async function extractZip(
  */
 export async function execCommand(
   command: Deno.Command,
-  errorMessage: string
+  errorMessage: string,
 ): Promise<void> {
   const { code, stderr } = await command.output()
   if (code !== 0) {
@@ -157,47 +222,59 @@ export async function handleDmgInstall(
   getArgs: (type: string, vars: Record<string, string>) => string[] | undefined,
 ): Promise<void> {
   const mountPoint = await Deno.makeTempDir()
-  
+
   try {
-    const vars = { 
+    const vars = {
       downloadedInstallerPath: downloadedFile,
       installPath: targetPath,
       mountPoint,
-      basePath: dirname(targetPath)
+      basePath: dirname(targetPath),
     }
-    
+
     // Mount DMG
     await execCommand(
       new Deno.Command('hdiutil', {
-        args: getArgs('dmg.mount', vars) ?? 
-              ['attach', downloadedFile, '-mountpoint', mountPoint, '-nobrowse', '-quiet']
+        args: getArgs('dmg.mount', vars) ?? [
+          'attach',
+          downloadedFile,
+          '-mountpoint',
+          mountPoint,
+          '-nobrowse',
+          '-quiet',
+        ],
       }),
-      'Failed to mount DMG'
+      'Failed to mount DMG',
     )
 
     // Find and copy .app
-    const appName = Array.from(Deno.readDirSync(mountPoint))
-      .find(entry => entry.name.endsWith('.app'))
-      ?.name
-    
+    const appName = Array.from(Deno.readDirSync(mountPoint)).find((entry) =>
+      entry.name.endsWith('.app'),
+    )?.name
+
     if (!appName) throw new Error('No .app found in DMG')
-    
+
     const appPath = `${mountPoint}/${appName}`
     await execCommand(
       new Deno.Command('cp', {
-        args: getArgs('dmg.copy', { ...vars, appPath }) ?? 
-              ['-R', appPath, dirname(targetPath)]
+        args: getArgs('dmg.copy', { ...vars, appPath }) ?? [
+          '-R',
+          appPath,
+          dirname(targetPath),
+        ],
       }),
-      'Failed to copy app'
+      'Failed to copy app',
     )
   } finally {
     try {
       await execCommand(
         new Deno.Command('hdiutil', {
-          args: getArgs('dmg.unmount', { mountPoint }) ?? 
-                ['detach', mountPoint, '-quiet']
+          args: getArgs('dmg.unmount', { mountPoint }) ?? [
+            'detach',
+            mountPoint,
+            '-quiet',
+          ],
         }),
-        'Failed to unmount DMG'
+        'Failed to unmount DMG',
       )
     } catch (error) {
       logger.warn(`Failed to unmount DMG: ${error}`)
@@ -217,22 +294,29 @@ export async function handleDmgInstall(
 export async function runInstaller(
   installerPath: string,
   args: InstallArgs,
-  platform: string
+  platform: string,
 ): Promise<void> {
   const replaceVars = (str: string, vars: Record<string, string>): string =>
     str.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? key)
 
-  const getArgs = (type: string, vars: Record<string, string>): string[] | undefined => {
+  const getArgs = (
+    type: string,
+    vars: Record<string, string>,
+  ): string[] | undefined => {
     const [section, key] = type.split('.')
     if (section === 'dmg' && key && args.dmg) {
-      const dmgArgs = args.dmg[key as keyof InstallArgs['dmg']] as string[] | undefined
-      return dmgArgs && Array.isArray(dmgArgs) 
-        ? dmgArgs.map(arg => replaceVars(arg, vars))
+      const dmgArgs = args.dmg[key as keyof InstallArgs['dmg']] as
+        | string[]
+        | undefined
+      return dmgArgs && Array.isArray(dmgArgs)
+        ? dmgArgs.map((arg) => replaceVars(arg, vars))
         : undefined
     }
-    const installerArgs = args[type as keyof Omit<InstallArgs, 'dmg'>] as string[] | undefined
+    const installerArgs = args[type as keyof Omit<InstallArgs, 'dmg'>] as
+      | string[]
+      | undefined
     return installerArgs && Array.isArray(installerArgs)
-      ? installerArgs.map(arg => replaceVars(arg, vars))
+      ? installerArgs.map((arg) => replaceVars(arg, vars))
       : undefined
   }
 
@@ -240,26 +324,35 @@ export async function runInstaller(
   // - installPath: Final installation directory
   // - downloadedInstallerPath: Path to the downloaded installer file
   // - basePath: Base installation directory for the platform
-  const vars = { 
+  const vars = {
     installPath: installerPath,
     downloadedInstallerPath: installerPath,
-    basePath: dirname(installerPath)
+    basePath: dirname(installerPath),
   }
-  
+
   if (platform === 'windows' && installerPath.endsWith('.exe')) {
+    // Windows installers might need quotes around paths with spaces
+    const installPathArg = installerPath.includes(' ')
+      ? `"${installerPath}"`
+      : installerPath
+
+    const installDirArg = vars.installPath.includes(' ')
+      ? `"/installdir=\"${vars.installPath}\""`
+      : `/installdir=${vars.installPath}`
+
     await execCommand(
-      new Deno.Command(installerPath, {
-        args: getArgs('exe', vars) ?? ['/silent', `/installdir=${installerPath}`]
+      new Deno.Command(installPathArg, {
+        args: getArgs('exe', vars) ?? ['/silent', installDirArg],
       }),
-      'Installation failed'
+      'Installation failed',
     )
   } else if (platform === 'mac') {
     if (installerPath.endsWith('.pkg')) {
       await execCommand(
         new Deno.Command('installer', {
-          args: getArgs('pkg', vars) ?? ['-pkg', installerPath, '-target', '/']
+          args: getArgs('pkg', vars) ?? ['-pkg', installerPath, '-target', '/'],
         }),
-        'Installation failed'
+        'Installation failed',
       )
     } else if (installerPath.endsWith('.dmg')) {
       await handleDmgInstall(installerPath, installerPath, getArgs)
@@ -267,11 +360,13 @@ export async function runInstaller(
   } else if (platform === 'linux' && installerPath.endsWith('.deb')) {
     await execCommand(
       new Deno.Command('sudo', {
-        args: getArgs('deb', vars) ?? ['dpkg', '-i', installerPath]
+        args: getArgs('deb', vars) ?? ['dpkg', '-i', installerPath],
       }),
-      'Installation failed'
+      'Installation failed',
     )
   } else {
-    throw new Error(`Unsupported installer format for ${platform}: ${installerPath}`)
+    throw new Error(
+      `Unsupported installer format for ${platform}: ${installerPath}`,
+    )
   }
-} 
+}
